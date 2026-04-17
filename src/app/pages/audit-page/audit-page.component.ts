@@ -1,8 +1,10 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { rxResource } from '@angular/core/rxjs-interop';
 import type { AuditLogEntryV1 } from '../../models/api-v1.model';
 import { DashboardApiService } from '../../services/dashboard-api.service';
 import { StitchIconComponent } from '../../ui/stitch-icon.component';
+import { extractApiError } from '../../core/http-error.util';
 
 function toAuditEntries(rows: unknown): AuditLogEntryV1[] {
   if (Array.isArray(rows)) {
@@ -22,6 +24,7 @@ function toAuditEntries(rows: unknown): AuditLogEntryV1[] {
 @Component({
   selector: 'app-audit-page',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule, StitchIconComponent],
   template: `
     <div class="px-10 py-12 max-w-6xl mx-auto">
@@ -94,28 +97,27 @@ function toAuditEntries(rows: unknown): AuditLogEntryV1[] {
 })
 export class AuditPageComponent implements OnInit {
   private readonly api = inject(DashboardApiService);
+  private readonly refreshVersion = signal(0);
 
-  readonly loading = signal(false);
-  readonly error = signal<string | null>(null);
-  readonly entries = signal<AuditLogEntryV1[]>([]);
+  readonly entriesResource = rxResource({
+    stream: () => {
+      this.refreshVersion();
+      return this.api.listAuditLogs();
+    }
+  });
+  readonly loading = computed(() => this.entriesResource.isLoading());
+  readonly error = computed(() => {
+    const e = this.entriesResource.error();
+    return e ? extractApiError(e, 'Could not load audit logs') : null;
+  });
+  readonly entries = computed(() => toAuditEntries(this.entriesResource.value() as unknown));
 
   ngOnInit(): void {
     this.load();
   }
 
   load(): void {
-    this.loading.set(true);
-    this.error.set(null);
-    this.api.listAuditLogs().subscribe({
-      next: rows => {
-        this.entries.set(toAuditEntries(rows));
-        this.loading.set(false);
-      },
-      error: err => {
-        this.error.set(err?.error?.error || 'Could not load audit logs');
-        this.loading.set(false);
-      }
-    });
+    this.refreshVersion.update(v => v + 1);
   }
 
   trackByEntry(index: number, row: AuditLogEntryV1): string {

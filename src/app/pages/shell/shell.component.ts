@@ -1,7 +1,6 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router, RouterModule, RouterOutlet } from '@angular/router';
-import { toSignal } from '@angular/core/rxjs-interop';
 import { AuthService } from '../../services/auth.service';
 import { DashboardApiService } from '../../services/dashboard-api.service';
 import { StitchIconComponent } from '../../ui/stitch-icon.component';
@@ -9,6 +8,7 @@ import { StitchIconComponent } from '../../ui/stitch-icon.component';
 @Component({
   selector: 'app-shell',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule, RouterModule, RouterOutlet, StitchIconComponent],
   template: `
     <div class="min-h-screen flex bg-stitch-surface text-stitch-on-surface">
@@ -121,9 +121,7 @@ export class ShellComponent implements OnInit {
   private readonly router = inject(Router);
   private readonly api = inject(DashboardApiService);
 
-  readonly user = toSignal(this.auth.user$, {
-    initialValue: this.auth.getCurrentUser()
-  });
+  readonly user = this.auth.user;
 
   /** null = loading */
   readonly apiConnected = signal<boolean | null>(null);

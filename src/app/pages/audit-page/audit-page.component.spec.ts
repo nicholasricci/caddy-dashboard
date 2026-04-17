@@ -22,13 +22,14 @@ describe('AuditPageComponent', () => {
     httpMock.verify();
   });
 
-  it('renders title and loads audit entries', () => {
+  it('renders title and loads audit entries', async () => {
     const fixture = TestBed.createComponent(AuditPageComponent);
     fixture.detectChanges();
 
     const req = httpMock.expectOne(`${apiBase}/audit`);
     expect(req.request.method).toBe('GET');
     req.flush([{ id: 'a1', actor: 'admin', action: 'user.create', target: 'user/bob' }]);
+    await fixture.whenStable();
     fixture.detectChanges();
 
     const root = fixture.nativeElement as HTMLElement;

@@ -1,5 +1,4 @@
-import { Component, DestroyRef, inject, signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, effect, inject, signal } from '@angular/core';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
@@ -9,6 +8,7 @@ import { StitchIconComponent } from '../../ui/stitch-icon.component';
 @Component({
   selector: 'app-login',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule, ReactiveFormsModule, RouterModule, StitchIconComponent],
   template: `
     <div class="min-h-screen flex items-center justify-center p-8 bg-stitch-surface-low">
@@ -99,7 +99,6 @@ export class LoginComponent {
   private readonly fb = inject(FormBuilder);
   private readonly authService = inject(AuthService);
   private readonly router = inject(Router);
-  private readonly destroyRef = inject(DestroyRef);
 
   readonly loginForm: FormGroup = this.fb.group({
     username: ['', [Validators.required, Validators.minLength(3)]],
@@ -110,13 +109,11 @@ export class LoginComponent {
   readonly isLoading = signal(false);
 
   constructor() {
-    this.authService.user$
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(user => {
-        if (user) {
-          void this.router.navigate(['/']);
-        }
-      });
+    effect(() => {
+      if (this.authService.user()) {
+        void this.router.navigate(['/']);
+      }
+    });
   }
 
   onSubmit(): void {

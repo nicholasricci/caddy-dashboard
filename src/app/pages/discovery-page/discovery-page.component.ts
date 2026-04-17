@@ -1,9 +1,13 @@
-import { Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
+import { FormArray, FormBuilder, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { rxResource } from '@angular/core/rxjs-interop';
 import { DashboardApiService } from '../../services/dashboard-api.service';
 import type { DiscoveryConfigV1, DiscoveryParametersV1, DiscoveryTagPairV1 } from '../../models/api-v1.model';
 import { StitchIconComponent } from '../../ui/stitch-icon.component';
+import { ConfirmService } from '../../ui/confirm.service';
+import { DiscoveryRuleFormModalComponent } from './discovery-rule-form-modal.component';
+import { extractApiError } from '../../core/http-error.util';
 
 type DiscoveryMethodId = 'aws_ssm' | 'aws_tag' | 'static_ip';
 
@@ -20,6 +24,11 @@ interface DiscoveryModalDraft {
   addressesText: string;
   enabled: boolean;
 }
+
+type DiscoveryTagRowForm = FormGroup<{
+  key: FormControl<string>;
+  value: FormControl<string>;
+}>;
 
 function normalizeDiscoveryRows(rows: unknown): DiscoveryConfigV1[] {
   if (Array.isArray(rows)) {
@@ -77,7 +86,8 @@ function parseAddressesText(d: DiscoveryConfigV1): string {
 @Component({
   selector: 'app-discovery-page',
   standalone: true,
-  imports: [CommonModule, FormsModule, StitchIconComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [CommonModule, ReactiveFormsModule, StitchIconComponent, DiscoveryRuleFormModalComponent],
   template: `
     <div class="px-10 py-12 max-w-6xl mx-auto">
       <header class="mb-10 flex flex-wrap items-start justify-between gap-6">
@@ -251,212 +261,25 @@ function parseAddressesText(d: DiscoveryConfigV1): string {
         </aside>
       </div>
 
-      @if (showModal()) {
-        <div
-          class="fixed inset-0 z-50 flex items-center justify-center p-4 stitch-modal-scrim backdrop-blur-md"
-          role="presentation"
-          tabindex="-1"
-          (click)="closeModal()"
-          (keydown.enter)="closeModal()"
-          (keydown.space)="$event.preventDefault(); closeModal()"
-          (keydown.escape)="closeModal()"
-        >
-          <div
-            class="bg-stitch-surface-lowest w-full max-w-2xl max-h-[min(90vh,48rem)] overflow-y-auto rounded-sm p-8 border-stitch-ghost shadow-2xl"
-            role="dialog"
-            aria-modal="true"
-            [attr.aria-labelledby]="'discovery-modal-title'"
-            (click)="$event.stopPropagation()"
-            (keydown)="$event.stopPropagation()"
-          >
-            <h3
-              id="discovery-modal-title"
-              class="font-display text-lg font-semibold mb-2 text-stitch-on-surface flex items-center gap-2"
-            >
-              @if (editingId()) {
-                <app-stitch-icon name="edit" />
-              } @else {
-                <app-stitch-icon name="plus" />
-              }
-              {{ editingId() ? 'Edit rule' : 'New rule' }}
-            </h3>
-
-            <div class="space-y-6">
-              <div>
-                <label
-                  class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium"
-                  for="discovery-rule-name"
-                  >Name</label
-                >
-                <input
-                  id="discovery-rule-name"
-                  class="input-technical mt-1"
-                  [(ngModel)]="draft.name"
-                  autocomplete="off"
-                />
-              </div>
-
-              <fieldset class="border-0 p-0 m-0 min-w-0">
-                <legend class="text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium mb-3">
-                  Discovery method
-                </legend>
-                <div
-                  class="grid gap-3 sm:grid-cols-3"
-                  role="group"
-                  aria-label="Discovery method"
-                >
-                  @for (opt of methodChoices; track opt.id) {
-                    <button
-                      type="button"
-                      class="stitch-panel text-left p-4 transition-colors border-stitch-ghost hover:bg-stitch-surface-low"
-                      [class.ring-2]="draft.method === opt.id"
-                      [class.ring-stitch-primary]="draft.method === opt.id"
-                      [class.bg-stitch-surface-low]="draft.method === opt.id"
-                      [attr.aria-pressed]="draft.method === opt.id"
-                      (click)="setMethod(opt.id)"
-                    >
-                      <span class="flex items-start gap-2">
-                        <app-stitch-icon [name]="opt.icon" size="sm" class="text-stitch-primary-fixed shrink-0 mt-0.5" />
-                        <span class="min-w-0">
-                          <span class="block font-display font-semibold text-sm text-stitch-on-surface">{{ opt.title }}</span>
-                          <span class="block text-xs text-stitch-on-surface-variant mt-1 leading-snug">{{ opt.description }}</span>
-                        </span>
-                      </span>
-                    </button>
-                  }
-                </div>
-              </fieldset>
-
-              @if (draft.method === 'aws_ssm') {
-                <div>
-                  <label
-                    class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium"
-                    for="discovery-region-ssm"
-                    >AWS region</label
-                  >
-                  <input
-                    id="discovery-region-ssm"
-                    class="input-technical mt-1 font-mono text-sm"
-                    [(ngModel)]="draft.region"
-                    placeholder="e.g. eu-central-1"
-                    autocomplete="off"
-                  />
-                </div>
-              }
-
-              @if (draft.method === 'aws_tag') {
-                <div>
-                  <label
-                    class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium"
-                    for="discovery-region-tag"
-                    >AWS region</label
-                  >
-                  <input
-                    id="discovery-region-tag"
-                    class="input-technical mt-1 font-mono text-sm"
-                    [(ngModel)]="draft.region"
-                    placeholder="e.g. eu-central-1"
-                    autocomplete="off"
-                  />
-                </div>
-                <div class="space-y-3">
-                  <p class="text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium">Resource tags</p>
-                  @for (row of draft.tagRows; track $index; let ti = $index) {
-                    <div class="flex flex-wrap items-end gap-3">
-                      <div class="min-w-0 flex-1 basis-[8rem]">
-                        <label class="sr-only" [attr.for]="'discovery-tag-key-' + ti">Tag key {{ ti + 1 }}</label>
-                        <input
-                          [id]="'discovery-tag-key-' + ti"
-                          class="input-technical font-mono text-sm"
-                          [(ngModel)]="row.key"
-                          placeholder="Key"
-                          autocomplete="off"
-                        />
-                      </div>
-                      <div class="min-w-0 flex-1 basis-[8rem]">
-                        <label class="sr-only" [attr.for]="'discovery-tag-value-' + ti">Tag value {{ ti + 1 }}</label>
-                        <input
-                          [id]="'discovery-tag-value-' + ti"
-                          class="input-technical font-mono text-sm"
-                          [(ngModel)]="row.value"
-                          placeholder="Value"
-                          autocomplete="off"
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        class="btn-stitch-secondary btn-stitch-secondary--sm stitch-icon-btn shrink-0"
-                        (click)="removeTagRow(ti)"
-                        [disabled]="draft.tagRows.length <= 1"
-                        [attr.aria-label]="'Remove tag row ' + (ti + 1)"
-                      >
-                        <app-stitch-icon name="trash" size="xs" />
-                        Remove
-                      </button>
-                    </div>
-                  }
-                  <button type="button" class="btn-stitch-secondary btn-stitch-secondary--sm stitch-icon-btn" (click)="addTagRow()">
-                    <app-stitch-icon name="plus" size="xs" />
-                    Add tag
-                  </button>
-                </div>
-              }
-
-              @if (draft.method === 'static_ip') {
-                <div>
-                  <label
-                    class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium"
-                    for="discovery-addresses"
-                    >Addresses / CIDRs</label
-                  >
-                  <p class="text-xs text-stitch-on-surface-variant mt-1 mb-2">One IPv4/IPv6 address or CIDR per line.</p>
-                  <textarea
-                    id="discovery-addresses"
-                    class="input-technical w-full min-h-[10rem] font-mono text-sm resize-y"
-                    [(ngModel)]="draft.addressesText"
-                    rows="8"
-                    spellcheck="false"
-                    autocomplete="off"
-                  ></textarea>
-                </div>
-              }
-
-              <label class="flex items-center gap-2 text-sm text-stitch-on-surface cursor-pointer" for="discovery-modal-enabled">
-                <input
-                  id="discovery-modal-enabled"
-                  type="checkbox"
-                  class="checkbox checkbox-sm rounded-sm"
-                  [(ngModel)]="draft.enabled"
-                />
-                Enabled
-              </label>
-            </div>
-            <div class="flex justify-end gap-3 mt-10">
-              <button type="button" class="btn-stitch-secondary btn-stitch-secondary--sm" (click)="closeModal()">
-                Cancel
-              </button>
-              <button
-                type="button"
-                class="btn-stitch-primary btn-stitch-primary--sm stitch-icon-btn"
-                [disabled]="saving()"
-                (click)="save()"
-              >
-                @if (saving()) {
-                  <span class="loading loading-spinner loading-xs"></span>
-                } @else {
-                  <app-stitch-icon name="apply" size="xs" />
-                  Save
-                }
-              </button>
-            </div>
-          </div>
-        </div>
-      }
+      <app-discovery-rule-form-modal
+        [open]="showModal()"
+        [editing]="!!editingId()"
+        [saving]="saving()"
+        [form]="discoveryForm"
+        [methodChoices]="methodChoices"
+        (cancelRequested)="closeModal()"
+        (saveRequested)="save()"
+        (methodChanged)="setMethod($event)"
+        (addTagRequested)="addTagRow()"
+        (removeTagRequested)="removeTagRow($event)"
+      />
     </div>
   `
 })
 export class DiscoveryPageComponent {
   private readonly api = inject(DashboardApiService);
+  private readonly confirmService = inject(ConfirmService);
+  private readonly fb = inject(FormBuilder);
 
   readonly methodChoices = [
     {
@@ -479,18 +302,41 @@ export class DiscoveryPageComponent {
     }
   ];
 
-  readonly configs = signal<DiscoveryConfigV1[]>([]);
-  readonly loading = signal(true);
-  readonly error = signal<string | null>(null);
+  private readonly refreshVersion = signal(0);
+  readonly actionError = signal<string | null>(null);
+  readonly configsResource = rxResource({
+    stream: () => {
+      this.refreshVersion();
+      return this.api.listDiscovery();
+    }
+  });
+  readonly configs = computed(() => normalizeDiscoveryRows(this.configsResource.value() as unknown));
+  readonly loading = computed(() => this.configsResource.isLoading());
+  readonly error = computed(() => {
+    const actionErr = this.actionError();
+    if (actionErr) {
+      return actionErr;
+    }
+    const e = this.configsResource.error();
+    return e ? extractApiError(e, 'Failed to load discovery') : null;
+  });
   readonly showModal = signal(false);
   readonly saving = signal(false);
   readonly editingId = signal<string | null>(null);
   readonly runningId = signal<string | null>(null);
   readonly lastRun = signal<string | null>(null);
 
-  draft: DiscoveryModalDraft = DiscoveryPageComponent.emptyDraft();
+  readonly discoveryForm = this.fb.nonNullable.group({
+    name: ['', [Validators.required]],
+    method: ['aws_ssm' as DiscoveryMethodId],
+    region: [''],
+    tagRows: this.fb.array([this.createTagRow()]),
+    addressesText: [''],
+    enabled: [true]
+  });
 
   constructor() {
+    this.syncMethodValidators(this.discoveryForm.controls.method.value);
     this.load();
   }
 
@@ -549,28 +395,20 @@ export class DiscoveryPageComponent {
   }
 
   load(): void {
-    this.loading.set(true);
-    this.api.listDiscovery().subscribe({
-      next: rows => {
-        this.configs.set(normalizeDiscoveryRows(rows));
-        this.loading.set(false);
-      },
-      error: err => {
-        this.error.set(err?.error?.error || 'Failed to load discovery');
-        this.loading.set(false);
-      }
-    });
+    this.actionError.set(null);
+    this.refreshVersion.update(v => v + 1);
   }
 
   openCreate(): void {
     this.editingId.set(null);
-    this.draft = DiscoveryPageComponent.emptyDraft();
+    const empty = DiscoveryPageComponent.emptyDraft();
+    this.resetForm(empty);
     this.showModal.set(true);
   }
 
   edit(d: DiscoveryConfigV1): void {
     this.editingId.set(d.id || null);
-    this.draft = {
+    const draft: DiscoveryModalDraft = {
       name: d.name ?? '',
       method: coerceMethod(d.method),
       region: coerceMethod(d.method) !== 'static_ip' ? (d.region ?? '') : '',
@@ -578,6 +416,7 @@ export class DiscoveryPageComponent {
       addressesText: parseAddressesText(d),
       enabled: d.enabled !== false
     };
+    this.resetForm(draft);
     this.showModal.set(true);
   }
 
@@ -586,27 +425,29 @@ export class DiscoveryPageComponent {
   }
 
   setMethod(m: DiscoveryMethodId): void {
-    this.draft.method = m;
+    this.discoveryForm.controls.method.setValue(m);
+    this.syncMethodValidators(m);
   }
 
   addTagRow(): void {
-    this.draft.tagRows = [...this.draft.tagRows, { key: '', value: '' }];
+    this.tagRows().push(this.createTagRow());
   }
 
   removeTagRow(index: number): void {
-    if (this.draft.tagRows.length <= 1) {
+    if (this.tagRows().length <= 1) {
       return;
     }
-    this.draft.tagRows = this.draft.tagRows.filter((_, i) => i !== index);
+    this.tagRows().removeAt(index);
   }
 
   private buildPayloadFromDraft(): DiscoveryConfigV1 {
-    const name = this.draft.name?.trim() ?? '';
-    const enabled = this.draft.enabled;
-    const method = this.draft.method;
+    const value = this.discoveryForm.getRawValue();
+    const name = value.name?.trim() ?? '';
+    const enabled = value.enabled;
+    const method = value.method;
 
     if (method === 'aws_ssm') {
-      const region = this.draft.region?.trim();
+      const region = value.region?.trim();
       const body: DiscoveryConfigV1 = { name, method, enabled, parameters: {} };
       if (region) {
         body.region = region;
@@ -615,8 +456,8 @@ export class DiscoveryPageComponent {
     }
 
     if (method === 'aws_tag') {
-      const region = this.draft.region?.trim();
-      const tags = this.draft.tagRows
+      const region = value.region?.trim();
+      const tags = (value.tagRows as { key: string; value: string }[])
         .map(r => ({ key: r.key.trim(), value: r.value.trim() }))
         .filter(r => r.key.length > 0);
       const first = tags[0];
@@ -636,7 +477,7 @@ export class DiscoveryPageComponent {
       return body;
     }
 
-    const addresses = this.draft.addressesText
+    const addresses = value.addressesText
       .split(/\n/)
       .map(l => l.trim())
       .filter(l => l.length > 0);
@@ -649,6 +490,9 @@ export class DiscoveryPageComponent {
   }
 
   save(): void {
+    if (this.discoveryForm.invalid) {
+      return;
+    }
     this.saving.set(true);
     const body = this.buildPayloadFromDraft();
     const id = this.editingId();
@@ -661,18 +505,28 @@ export class DiscoveryPageComponent {
       },
       error: err => {
         this.saving.set(false);
-        this.error.set(err?.error?.error || 'Save failed');
+        this.actionError.set(extractApiError(err, 'Save failed'));
       }
     });
   }
 
-  remove(d: DiscoveryConfigV1): void {
-    if (!d.id || !confirm('Delete this discovery rule?')) {
+  async remove(d: DiscoveryConfigV1): Promise<void> {
+    if (!d.id) {
+      return;
+    }
+    const confirmed = await this.confirmService.ask({
+      title: 'Delete discovery rule',
+      message: 'Delete this discovery rule?',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      variant: 'danger'
+    });
+    if (!confirmed) {
       return;
     }
     this.api.deleteDiscovery(d.id).subscribe({
       next: () => this.load(),
-      error: err => this.error.set(err?.error?.error || 'Delete failed')
+      error: err => this.actionError.set(extractApiError(err, 'Delete failed'))
     });
   }
 
@@ -690,8 +544,51 @@ export class DiscoveryPageComponent {
       },
       error: err => {
         this.runningId.set(null);
-        this.error.set(err?.error?.error || 'Run failed');
+        this.actionError.set(extractApiError(err, 'Run failed'));
       }
     });
+  }
+
+  currentMethod(): DiscoveryMethodId {
+    return this.discoveryForm.controls.method.value;
+  }
+
+  tagRows(): FormArray<DiscoveryTagRowForm> {
+    return this.discoveryForm.controls.tagRows;
+  }
+
+  private createTagRow(): DiscoveryTagRowForm {
+    return this.fb.nonNullable.group({
+      key: [''],
+      value: ['']
+    });
+  }
+
+  private resetForm(draft: DiscoveryModalDraft): void {
+    this.discoveryForm.controls.name.setValue(draft.name);
+    this.discoveryForm.controls.method.setValue(draft.method);
+    this.discoveryForm.controls.region.setValue(draft.region);
+    this.discoveryForm.controls.addressesText.setValue(draft.addressesText);
+    this.discoveryForm.controls.enabled.setValue(draft.enabled);
+    this.tagRows().clear();
+    const rows = draft.tagRows.length > 0 ? draft.tagRows : [{ key: '', value: '' }];
+    for (const row of rows) {
+      this.tagRows().push(this.fb.nonNullable.group({ key: [row.key], value: [row.value] }));
+    }
+    this.syncMethodValidators(draft.method);
+  }
+
+  private syncMethodValidators(method: DiscoveryMethodId): void {
+    const region = this.discoveryForm.controls.region;
+    const addressesText = this.discoveryForm.controls.addressesText;
+    if (method === 'static_ip') {
+      region.clearValidators();
+      addressesText.setValidators([Validators.required]);
+    } else {
+      region.setValidators([Validators.required]);
+      addressesText.clearValidators();
+    }
+    region.updateValueAndValidity({ emitEvent: false });
+    addressesText.updateValueAndValidity({ emitEvent: false });
   }
 }

@@ -1,9 +1,10 @@
-import { Component, computed, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 
 /** Inline SVG icons (Heroicons-style outline) for Stitch UI — no extra dependency. */
 @Component({
   selector: 'app-stitch-icon',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     class: 'inline-flex shrink-0 items-center justify-center text-current'
   },

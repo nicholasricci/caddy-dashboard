@@ -1,9 +1,12 @@
-import { Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { rxResource } from '@angular/core/rxjs-interop';
 import { DashboardApiService } from '../../services/dashboard-api.service';
 import type { UserV1 } from '../../models/api-v1.model';
 import { StitchIconComponent } from '../../ui/stitch-icon.component';
+import { ConfirmService } from '../../ui/confirm.service';
+import { extractApiError } from '../../core/http-error.util';
 
 function normalizeUsers(rows: unknown): UserV1[] {
   if (Array.isArray(rows)) {
@@ -26,7 +29,8 @@ function normalizeUsers(rows: unknown): UserV1[] {
 @Component({
   selector: 'app-users-admin-page',
   standalone: true,
-  imports: [CommonModule, FormsModule, StitchIconComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [CommonModule, ReactiveFormsModule, StitchIconComponent],
   template: `
     <div class="px-10 py-12 max-w-4xl mx-auto">
       <header class="mb-12 flex flex-wrap items-start justify-between gap-6">
@@ -88,10 +92,8 @@ function normalizeUsers(rows: unknown): UserV1[] {
               @for (u of users(); track u.id; let i = $index) {
                 <tr
                   class="text-sm hover:bg-stitch-surface-container/40 transition-colors"
-                  [ngClass]="{
-                    'bg-transparent': i % 2 === 0,
-                    'bg-stitch-surface-low/80': i % 2 !== 0
-                  }"
+                  [class.bg-transparent]="i % 2 === 0"
+                  [class.bg-stitch-surface-low/80]="i % 2 !== 0"
                 >
                   <td class="py-6 px-4 font-mono text-sm align-middle">{{ u.username }}</td>
                   <td class="py-6 px-4 align-middle">
@@ -151,48 +153,52 @@ function normalizeUsers(rows: unknown): UserV1[] {
               }
               {{ editingId() ? 'Edit user' : 'New user' }}
             </h3>
-            <label
-              class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium"
-              for="users-modal-username"
-              >Username</label
-            >
-            <input
-              id="users-modal-username"
-              class="input-technical mt-1 mb-5"
-              [ngModel]="draftUsername()"
-              (ngModelChange)="draftUsername.set($event)"
-              [readonly]="!!editingId()"
-            />
-            <label
-              class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium"
-              for="users-modal-password"
-              >Password</label
-            >
-            <input
-              id="users-modal-password"
-              class="input-technical mt-1 mb-5"
-              type="password"
-              [ngModel]="draftPassword()"
-              (ngModelChange)="draftPassword.set($event)"
-              placeholder="••••••••"
-            />
-            <label
-              class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium"
-              for="users-modal-role"
-              >Role</label
-            >
-            <input
-              id="users-modal-role"
-              class="input-technical mt-1 mb-8"
-              [ngModel]="draftRole()"
-              (ngModelChange)="draftRole.set($event)"
-              placeholder="admin / user"
-            />
+            <form [formGroup]="userForm">
+              <label
+                class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium"
+                for="users-modal-username"
+                >Username</label
+              >
+              <input
+                id="users-modal-username"
+                class="input-technical mt-1 mb-5"
+                formControlName="username"
+                [readonly]="!!editingId()"
+              />
+              <label
+                class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium"
+                for="users-modal-password"
+                >Password</label
+              >
+              <input
+                id="users-modal-password"
+                class="input-technical mt-1 mb-5"
+                type="password"
+                formControlName="password"
+                placeholder="••••••••"
+              />
+              <label
+                class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium"
+                for="users-modal-role"
+                >Role</label
+              >
+              <input
+                id="users-modal-role"
+                class="input-technical mt-1 mb-8"
+                formControlName="role"
+                placeholder="admin / user"
+              />
+            </form>
             <div class="flex justify-end gap-3">
               <button type="button" class="btn-stitch-secondary btn-stitch-secondary--sm" (click)="closeModal()">
                 Cancel
               </button>
-              <button type="button" class="btn-stitch-primary btn-stitch-primary--sm stitch-icon-btn" (click)="save()">
+              <button
+                type="button"
+                class="btn-stitch-primary btn-stitch-primary--sm stitch-icon-btn"
+                [disabled]="userForm.invalid"
+                (click)="save()"
+              >
                 <app-stitch-icon name="apply" size="xs" />
                 Save
               </button>
@@ -205,33 +211,43 @@ function normalizeUsers(rows: unknown): UserV1[] {
 })
 export class UsersAdminPageComponent {
   private readonly api = inject(DashboardApiService);
+  private readonly confirmService = inject(ConfirmService);
+  private readonly fb = inject(FormBuilder);
 
-  readonly users = signal<UserV1[]>([]);
-  readonly loading = signal(true);
-  readonly error = signal<string | null>(null);
+  private readonly refreshVersion = signal(0);
+  readonly actionError = signal<string | null>(null);
+  readonly usersResource = rxResource({
+    stream: () => {
+      this.refreshVersion();
+      return this.api.listUsers();
+    }
+  });
+  readonly users = computed(() => normalizeUsers(this.usersResource.value() as unknown));
+  readonly loading = computed(() => this.usersResource.isLoading());
+  readonly error = computed(() => {
+    const actionErr = this.actionError();
+    if (actionErr) {
+      return actionErr;
+    }
+    const e = this.usersResource.error();
+    return e ? extractApiError(e, 'Failed to load users') : null;
+  });
   readonly showModal = signal(false);
   readonly editingId = signal<string | null>(null);
 
-  readonly draftUsername = signal('');
-  readonly draftPassword = signal('');
-  readonly draftRole = signal('user');
+  readonly userForm = this.fb.nonNullable.group({
+    username: ['', [Validators.required]],
+    password: ['', [Validators.minLength(6)]],
+    role: ['user', [Validators.required]]
+  });
 
   constructor() {
     this.load();
   }
 
   load(): void {
-    this.loading.set(true);
-    this.api.listUsers().subscribe({
-      next: rows => {
-        this.users.set(normalizeUsers(rows));
-        this.loading.set(false);
-      },
-      error: err => {
-        this.error.set(err?.error?.error || 'Failed to load users');
-        this.loading.set(false);
-      }
-    });
+    this.actionError.set(null);
+    this.refreshVersion.update(v => v + 1);
   }
 
   closeModal(): void {
@@ -240,64 +256,80 @@ export class UsersAdminPageComponent {
 
   openCreate(): void {
     this.editingId.set(null);
-    this.draftUsername.set('');
-    this.draftPassword.set('');
-    this.draftRole.set('user');
+    this.userForm.reset({ username: '', password: '', role: 'user' });
+    this.userForm.controls.username.enable();
+    this.userForm.controls.password.setValidators([Validators.required, Validators.minLength(6)]);
+    this.userForm.controls.password.updateValueAndValidity();
     this.showModal.set(true);
   }
 
   edit(u: UserV1): void {
     this.editingId.set(u.id || null);
-    this.draftUsername.set(u.username || '');
-    this.draftPassword.set('');
-    this.draftRole.set(u.role || 'user');
+    this.userForm.reset({
+      username: u.username || '',
+      password: '',
+      role: u.role || 'user'
+    });
+    this.userForm.controls.username.disable();
+    this.userForm.controls.password.setValidators([Validators.minLength(6)]);
+    this.userForm.controls.password.updateValueAndValidity();
     this.showModal.set(true);
   }
 
   save(): void {
+    if (this.userForm.invalid) {
+      return;
+    }
     const id = this.editingId();
+    const value = this.userForm.getRawValue();
     if (id) {
       this.api
         .updateUser(id, {
-          username: this.draftUsername() || undefined,
-          password: this.draftPassword() || undefined,
-          role: this.draftRole() || undefined
+          username: value.username || undefined,
+          password: value.password || undefined,
+          role: value.role || undefined
         })
         .subscribe({
           next: () => {
             this.closeModal();
             this.load();
           },
-          error: err => this.error.set(err?.error?.error || 'Update failed')
+          error: err => this.actionError.set(extractApiError(err, 'Update failed'))
         });
     } else {
-      if (!this.draftUsername() || !this.draftPassword()) {
-        this.error.set('Username and password required');
-        return;
-      }
       this.api
         .createUser({
-          username: this.draftUsername(),
-          password: this.draftPassword(),
-          role: this.draftRole() || undefined
+          username: value.username,
+          password: value.password,
+          role: value.role || undefined
         })
         .subscribe({
           next: () => {
             this.closeModal();
             this.load();
           },
-          error: err => this.error.set(err?.error?.error || 'Create failed')
+          error: err => this.actionError.set(extractApiError(err, 'Create failed'))
         });
     }
   }
 
-  remove(u: UserV1): void {
-    if (!u.id || !confirm(`Delete ${u.username}?`)) {
+  async remove(u: UserV1): Promise<void> {
+    if (!u.id) {
+      return;
+    }
+    const confirmed = await this.confirmService.ask({
+      title: 'Delete user',
+      message: `Delete ${u.username}?`,
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      variant: 'danger'
+    });
+    if (!confirmed) {
       return;
     }
     this.api.deleteUser(u.id).subscribe({
       next: () => this.load(),
-      error: err => this.error.set(err?.error?.error || 'Delete failed')
+      error: err => this.actionError.set(extractApiError(err, 'Delete failed'))
     });
   }
 }

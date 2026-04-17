@@ -1,17 +1,15 @@
-import { Component, inject, signal, computed } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
-import { FormsModule } from '@angular/forms';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { rxResource } from '@angular/core/rxjs-interop';
+import { map } from 'rxjs';
 import { DashboardApiService } from '../../services/dashboard-api.service';
 import { StitchIconComponent } from '../../ui/stitch-icon.component';
+import { ConfirmService } from '../../ui/confirm.service';
 import type { CaddyNodeV1 } from '../../models/api-v1.model';
-import {
-  defaultNodeCreateDraft,
-  mapCaddyNodeV1ToListItem,
-  mapNodeCreateDraftToPayload,
-  type NodeCreateDraftVm,
-  type NodeListItemVm
-} from './nodes-page.vm';
+import { defaultNodeCreateDraft, mapCaddyNodeV1ToListItem, mapNodeCreateDraftToPayload, type NodeListItemVm } from './nodes-page.vm';
+import { extractApiError } from '../../core/http-error.util';
 
 function normalizeNodeRows(rows: unknown): CaddyNodeV1[] {
   if (Array.isArray(rows)) {
@@ -34,7 +32,8 @@ function normalizeNodeRows(rows: unknown): CaddyNodeV1[] {
 @Component({
   selector: 'app-nodes-page',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule, StitchIconComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [CommonModule, RouterModule, ReactiveFormsModule, StitchIconComponent],
   template: `
     <div class="px-10 py-12 max-w-7xl mx-auto">
       <header class="mb-12 flex flex-wrap items-start justify-between gap-6">
@@ -134,10 +133,8 @@ function normalizeNodeRows(rows: unknown): CaddyNodeV1[] {
               @for (n of nodes(); track n.id; let i = $index) {
                 <tr
                   class="text-sm hover:bg-stitch-surface-container/40 transition-colors"
-                  [ngClass]="{
-                    'bg-transparent': i % 2 === 0,
-                    'bg-stitch-surface-low/80': i % 2 !== 0
-                  }"
+                  [class.bg-transparent]="i % 2 === 0"
+                  [class.bg-stitch-surface-low/80]="i % 2 !== 0"
                 >
                   <td class="py-6 px-4 font-medium align-middle">{{ n.name || '—' }}</td>
                   <td class="py-6 px-4 align-middle">
@@ -203,7 +200,7 @@ function normalizeNodeRows(rows: unknown): CaddyNodeV1[] {
               <app-stitch-icon name="plus" />
               New node
             </h3>
-            <div class="space-y-5">
+            <form class="space-y-5" [formGroup]="createForm">
               <div>
                 <label
                   class="block text-[11px] font-medium uppercase tracking-wider text-stitch-on-surface-variant"
@@ -213,7 +210,7 @@ function normalizeNodeRows(rows: unknown): CaddyNodeV1[] {
                 <input
                   id="nodes-modal-name"
                   class="input-technical mt-1"
-                  [(ngModel)]="draft.name"
+                  formControlName="name"
                   placeholder="production-edge"
                 />
               </div>
@@ -226,7 +223,7 @@ function normalizeNodeRows(rows: unknown): CaddyNodeV1[] {
                 <input
                   id="nodes-modal-private-ip"
                   class="input-technical mt-1 font-mono text-sm"
-                  [(ngModel)]="draft.private_ip"
+                  formControlName="private_ip"
                   placeholder="10.0.1.50"
                 />
               </div>
@@ -239,7 +236,7 @@ function normalizeNodeRows(rows: unknown): CaddyNodeV1[] {
                 <input
                   id="nodes-modal-instance-id"
                   class="input-technical mt-1 font-mono text-sm"
-                  [(ngModel)]="draft.instance_id"
+                  formControlName="instance_id"
                   placeholder="i-0abc…"
                 />
               </div>
@@ -252,7 +249,7 @@ function normalizeNodeRows(rows: unknown): CaddyNodeV1[] {
                 <input
                   id="nodes-modal-region"
                   class="input-technical mt-1 font-mono text-sm"
-                  [(ngModel)]="draft.region"
+                  formControlName="region"
                   placeholder="eu-south-1"
                 />
               </div>
@@ -261,11 +258,11 @@ function normalizeNodeRows(rows: unknown): CaddyNodeV1[] {
                   id="nodes-modal-ssm"
                   type="checkbox"
                   class="checkbox checkbox-sm rounded-sm"
-                  [(ngModel)]="draft.ssm_enabled"
+                  formControlName="ssm_enabled"
                 />
                 SSM enabled
               </label>
-            </div>
+            </form>
             <div class="flex justify-end gap-3 mt-10">
               <button type="button" class="btn-stitch-secondary btn-stitch-secondary--sm" (click)="closeModal()">
                 Cancel
@@ -273,7 +270,7 @@ function normalizeNodeRows(rows: unknown): CaddyNodeV1[] {
               <button
                 type="button"
                 class="btn-stitch-primary btn-stitch-primary--sm stitch-icon-btn"
-                [disabled]="saving()"
+                [disabled]="saving() || createForm.invalid"
                 (click)="saveCreate()"
               >
                 @if (saving()) {
@@ -292,12 +289,33 @@ function normalizeNodeRows(rows: unknown): CaddyNodeV1[] {
 })
 export class NodesPageComponent {
   private readonly api = inject(DashboardApiService);
+  private readonly confirmService = inject(ConfirmService);
+  private readonly fb = inject(FormBuilder);
 
-  readonly nodes = signal<NodeListItemVm[]>([]);
-  readonly loading = signal(true);
-  readonly error = signal<string | null>(null);
   readonly showModal = signal(false);
   readonly saving = signal(false);
+  readonly actionError = signal<string | null>(null);
+  private readonly refreshVersion = signal(0);
+
+  readonly nodesResource = rxResource({
+    stream: () => {
+      this.refreshVersion();
+      return this.api.listNodes().pipe(
+        map(rows => normalizeNodeRows(rows).map(mapCaddyNodeV1ToListItem))
+      );
+    }
+  });
+
+  readonly nodes = computed(() => (this.nodesResource.value() as NodeListItemVm[] | undefined) ?? []);
+  readonly loading = computed(() => this.nodesResource.isLoading());
+  readonly error = computed(() => {
+    const actionErr = this.actionError();
+    if (actionErr) {
+      return actionErr;
+    }
+    const e = this.nodesResource.error();
+    return e ? extractApiError(e, 'Failed to load nodes') : null;
+  });
 
   readonly onlineCount = computed(() =>
     this.nodes().filter(n => this.isOnlineStatus(n.status)).length
@@ -308,7 +326,13 @@ export class NodesPageComponent {
     return total - this.onlineCount();
   });
 
-  draft: NodeCreateDraftVm = defaultNodeCreateDraft();
+  readonly createForm = this.fb.nonNullable.group({
+    name: ['', [Validators.required]],
+    private_ip: [''],
+    instance_id: [''],
+    region: [''],
+    ssm_enabled: [false]
+  });
 
   constructor() {
     this.load();
@@ -322,18 +346,8 @@ export class NodesPageComponent {
   }
 
   load(): void {
-    this.loading.set(true);
-    this.error.set(null);
-    this.api.listNodes().subscribe({
-      next: rows => {
-        this.nodes.set(normalizeNodeRows(rows).map(mapCaddyNodeV1ToListItem));
-        this.loading.set(false);
-      },
-      error: err => {
-        this.error.set(err?.error?.error || 'Failed to load nodes');
-        this.loading.set(false);
-      }
-    });
+    this.actionError.set(null);
+    this.refreshVersion.update(v => v + 1);
   }
 
   closeModal(): void {
@@ -341,13 +355,16 @@ export class NodesPageComponent {
   }
 
   openCreate(): void {
-    this.draft = defaultNodeCreateDraft();
+    this.createForm.reset(defaultNodeCreateDraft());
     this.showModal.set(true);
   }
 
   saveCreate(): void {
+    if (this.createForm.invalid) {
+      return;
+    }
     this.saving.set(true);
-    this.api.createNode(mapNodeCreateDraftToPayload(this.draft)).subscribe({
+    this.api.createNode(mapNodeCreateDraftToPayload(this.createForm.getRawValue())).subscribe({
       next: () => {
         this.saving.set(false);
         this.showModal.set(false);
@@ -355,18 +372,28 @@ export class NodesPageComponent {
       },
       error: err => {
         this.saving.set(false);
-        this.error.set(err?.error?.error || 'Create failed');
+        this.actionError.set(extractApiError(err, 'Create failed'));
       }
     });
   }
 
-  remove(n: NodeListItemVm): void {
-    if (!n.id || !confirm(`Delete node ${n.name || n.id}?`)) {
+  async remove(n: NodeListItemVm): Promise<void> {
+    if (!n.id) {
+      return;
+    }
+    const confirmed = await this.confirmService.ask({
+      title: 'Delete node',
+      message: `Delete node ${n.name || n.id}?`,
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      variant: 'danger'
+    });
+    if (!confirmed) {
       return;
     }
     this.api.deleteNode(n.id).subscribe({
       next: () => this.load(),
-      error: err => this.error.set(err?.error?.error || 'Delete failed')
+      error: err => this.actionError.set(extractApiError(err, 'Delete failed'))
     });
   }
 }

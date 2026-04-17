@@ -1,6 +1,6 @@
-import { Injectable, inject } from '@angular/core';
+import { computed, Injectable, inject, signal } from '@angular/core';
 import { HttpBackend, HttpClient } from '@angular/common/http';
-import { BehaviorSubject, Observable, catchError, finalize, map, of, share, tap, throwError } from 'rxjs';
+import { Observable, catchError, finalize, map, of, share, tap, throwError } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { decodeJwtPayload } from '../core/jwt.util';
 import { LoginRequestV1, SessionUserV1, TokenMapV1 } from '../models/api-v1.model';
@@ -16,8 +16,10 @@ export class AuthService {
   private readonly httpRaw = new HttpClient(inject(HttpBackend));
   private readonly apiUrl = environment.apiUrl.replace(/\/$/, '');
 
-  private readonly userSubject = new BehaviorSubject<SessionUserV1 | null>(null);
-  readonly user$ = this.userSubject.asObservable();
+  private readonly userSignal = signal<SessionUserV1 | null>(null);
+  readonly user = this.userSignal.asReadonly();
+  readonly isAuthenticated = computed(() => !!this.getAccessToken() && this.userSignal() !== null);
+  readonly isAdmin = computed(() => this.userSignal()?.isAdmin ?? false);
 
   private isInitialized = false;
   private initializationPromise: Promise<void> | null = null;
@@ -73,7 +75,7 @@ export class AuthService {
     const payload = decodeJwtPayload(access);
     if (!payload) {
       // Opaque or non-JWT access token: still allow session; admin JWT claims won't apply.
-      this.userSubject.next({
+      this.userSignal.set({
         id: null,
         username: 'user',
         role: null,
@@ -95,7 +97,7 @@ export class AuthService {
       r === 'admin' ||
       payload['is_admin'] === true ||
       payload['admin'] === true;
-    this.userSubject.next({
+    this.userSignal.set({
       id,
       username,
       role: r,
@@ -103,12 +105,8 @@ export class AuthService {
     });
   }
 
-  isAuthenticated(): boolean {
-    return !!this.getAccessToken() && this.userSubject.value !== null;
-  }
-
   getCurrentUser(): SessionUserV1 | null {
-    return this.userSubject.value;
+    return this.userSignal();
   }
 
   async waitForInitialization(): Promise<void> {
@@ -175,7 +173,7 @@ export class AuthService {
 
   logout(): void {
     this.clearStoredTokens();
-    this.userSubject.next(null);
+    this.userSignal.set(null);
   }
 
   logoutRemote(): Observable<void> {

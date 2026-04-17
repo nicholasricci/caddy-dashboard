@@ -1,4 +1,5 @@
 import {
+  ChangeDetectionStrategy,
   Component,
   AfterViewInit,
   OnDestroy,
@@ -18,6 +19,7 @@ import loader from '@monaco-editor/loader';
 import type { editor } from 'monaco-editor';
 import type { CaddyNodeV1 } from '../../models/api-v1.model';
 import { StitchIconComponent } from '../../ui/stitch-icon.component';
+import { NodeConfigEditorComponent } from './node-config-editor.component';
 import {
   extractCaddyConfigFromSyncResponse,
   extractConfigFromSnapshotRecord,
@@ -45,7 +47,8 @@ function normalizeSnapshots(rows: unknown): Record<string, unknown>[] {
 @Component({
   selector: 'app-node-detail-page',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule, StitchIconComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [CommonModule, RouterModule, FormsModule, StitchIconComponent, NodeConfigEditorComponent],
   host: {
     class: 'flex w-full flex-1 min-h-0 flex-col'
   },
@@ -106,32 +109,7 @@ function normalizeSnapshots(rows: unknown): Record<string, unknown>[] {
       </header>
 
       <div class="flex flex-1 min-h-0 min-h-[32rem] w-full">
-        <div class="flex-1 min-w-0 min-h-0 bg-stitch-surface-lowest flex flex-col">
-          <div
-            class="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-stitch-ghost bg-stitch-surface-low shrink-0"
-          >
-            <button
-              type="button"
-              class="btn-stitch-secondary btn-stitch-secondary--sm stitch-icon-btn"
-              (click)="openFormatConfirm()"
-            >
-              <app-stitch-icon name="sparkles" size="xs" />
-              Format JSON
-            </button>
-            <button
-              type="button"
-              class="btn-stitch-secondary btn-stitch-secondary--sm stitch-icon-btn"
-              (click)="openCopyConfirm()"
-            >
-              <app-stitch-icon name="clipboard" size="xs" />
-              Copy
-            </button>
-            <span class="text-[10px] uppercase tracking-wider text-stitch-on-surface-variant ml-auto font-medium">
-              Editor
-            </span>
-          </div>
-          <div #editorHost class="flex-1 min-h-0 min-h-[24rem] w-full relative"></div>
-        </div>
+        <app-node-config-editor class="flex-1 min-w-0 min-h-0" (formatClick)="openFormatConfirm()" (copyClick)="openCopyConfirm()" />
         <aside class="w-[22rem] shrink-0 bg-stitch-surface-dim px-5 py-6 overflow-y-auto border-l border-stitch-ghost space-y-6">
           @if (node(); as n) {
             <div class="stitch-panel stitch-panel--dim !p-4">
@@ -350,7 +328,7 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
   private readonly route = inject(ActivatedRoute);
   private readonly injector = inject(Injector);
 
-  @ViewChild('editorHost') editorHost!: ElementRef<HTMLDivElement>;
+  @ViewChild(NodeConfigEditorComponent) configEditor?: NodeConfigEditorComponent;
   @ViewChild('diffHost') diffHost?: ElementRef<HTMLDivElement>;
 
   readonly nodeId = this.route.snapshot.paramMap.get('id') || '';
@@ -524,7 +502,7 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
   }
 
   private async initEditor(): Promise<void> {
-    const el = this.editorHost?.nativeElement;
+    const el = this.configEditor?.editorHost?.nativeElement;
     if (!el) {
       return;
     }
