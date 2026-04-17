@@ -11,6 +11,7 @@
     "lint": "ng lint"
   },
   "private": true,
+  "packageManager": "npm@11.6.2",
   "license": "MIT",
   "dependencies": {
     "@angular/common": "^21.2.9",

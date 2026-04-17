@@ -4,8 +4,8 @@ Frontend dashboard for managing Caddy nodes (overview, discovery, config operati
 
 ## Requirements
 
-- Node.js 20+
-- npm
+- Node.js 22.22.0
+- npm 11.6.2
 
 ## Development
 
@@ -53,7 +53,7 @@ This project is licensed under the [MIT License](LICENSE).
 
 ## Angular CLI
 
-This project uses Angular CLI 20.x.
+This project uses Angular CLI 21.x.
 
 Helpful commands:
 
