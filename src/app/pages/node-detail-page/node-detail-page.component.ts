@@ -53,8 +53,8 @@ function normalizeSnapshots(rows: unknown): Record<string, unknown>[] {
     class: 'flex w-full flex-1 min-h-0 flex-col'
   },
   template: `
-    <div class="flex flex-1 min-h-0 flex-col bg-stitch-surface">
-      <header class="px-10 py-8 bg-stitch-surface-low border-b border-stitch-ghost">
+    <div class="flex flex-1 min-h-0 flex-col bg-stitch-surface overflow-hidden">
+      <header class="px-10 py-8 bg-stitch-surface-low border-b border-stitch-ghost shrink-0">
         <div class="flex flex-wrap items-start justify-between gap-6">
           <div>
             <a
@@ -108,11 +108,11 @@ function normalizeSnapshots(rows: unknown): Record<string, unknown>[] {
         </div>
       </header>
 
-      <div class="flex flex-1 min-h-0 min-h-[32rem] w-full">
-        <app-node-config-editor class="flex-1 min-w-0 min-h-0" (formatClick)="openFormatConfirm()" (copyClick)="openCopyConfirm()" />
-        <aside class="w-[22rem] shrink-0 bg-stitch-surface-dim px-5 py-6 overflow-y-auto border-l border-stitch-ghost space-y-6">
+      <div class="flex flex-1 min-h-0 w-full overflow-hidden">
+        <app-node-config-editor class="flex-1 min-w-0 min-h-0 h-full" (formatClick)="openFormatConfirm()" (copyClick)="openCopyConfirm()" />
+        <aside class="w-[22rem] shrink-0 bg-stitch-surface-dim px-5 py-6 border-l border-stitch-ghost flex flex-col min-h-0">
           @if (node(); as n) {
-            <div class="stitch-panel stitch-panel--dim !p-4">
+            <div class="stitch-panel stitch-panel--dim !p-4 shrink-0">
               <p class="stitch-panel-title">Node metadata</p>
               <dl class="space-y-3 text-xs font-mono text-stitch-on-surface">
                 <div class="flex justify-between gap-2 border-b border-stitch-ghost/50 pb-2">
@@ -153,7 +153,7 @@ function normalizeSnapshots(rows: unknown): Record<string, unknown>[] {
             </div>
           }
 
-          <div>
+          <div class="mt-6 flex-1 min-h-0 overflow-y-auto pr-1">
             <h3
               class="font-display text-[11px] font-semibold uppercase tracking-[0.2em] text-stitch-on-surface-variant mb-4 flex items-center gap-2"
             >

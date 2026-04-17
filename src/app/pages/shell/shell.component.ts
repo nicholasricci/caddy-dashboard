@@ -11,7 +11,7 @@ import { StitchIconComponent } from '../../ui/stitch-icon.component';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule, RouterModule, RouterOutlet, StitchIconComponent],
   template: `
-    <div class="min-h-screen flex bg-stitch-surface text-stitch-on-surface">
+    <div class="h-screen overflow-hidden flex bg-stitch-surface text-stitch-on-surface">
       <aside
         class="w-[280px] shrink-0 bg-stitch-surface-low flex flex-col border-r border-stitch-ghost"
         aria-label="Main navigation"

@@ -7,7 +7,7 @@ import { StitchIconComponent } from '../../ui/stitch-icon.component';
   standalone: true,
   imports: [CommonModule, StitchIconComponent],
   template: `
-    <div class="flex-1 min-w-0 min-h-0 bg-stitch-surface-lowest flex flex-col">
+    <div class="flex-1 min-w-0 min-h-0 h-full bg-stitch-surface-lowest flex flex-col">
       @if (showToolbar()) {
         <div
           class="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-stitch-ghost bg-stitch-surface-low shrink-0"
@@ -33,7 +33,7 @@ import { StitchIconComponent } from '../../ui/stitch-icon.component';
           </span>
         </div>
       }
-      <div #editorHost class="flex-1 min-h-0 min-h-[24rem] w-full relative"></div>
+      <div #editorHost class="flex-1 min-h-0 h-full w-full relative"></div>
       @if (showDiffHost()) {
         <div #diffHost class="flex-1 min-h-0 min-h-[min(65vh,36rem)] w-full relative"></div>
       }
