@@ -1,5 +1,4 @@
 import { Injectable } from '@angular/core';
-import { HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { ApplyConfigRequestV1, CaddyNodeV1 } from '../../models/api-v1.model';
 import { ApiBaseService } from './api-base.service';
@@ -40,16 +39,8 @@ export class NodesApiService extends ApiBaseService {
     return this.http.get<unknown>(`${this.base}/nodes/${encodeURIComponent(id)}/config/live`);
   }
 
-  syncConfig(id: string, options?: { persistSnapshot?: boolean }): Observable<Record<string, unknown>> {
-    let params = new HttpParams();
-    if (options?.persistSnapshot === false) {
-      params = params.set('persist_snapshot', 'false');
-    }
-    return this.http.post<Record<string, unknown>>(
-      `${this.base}/nodes/${encodeURIComponent(id)}/sync`,
-      {},
-      { params }
-    );
+  syncConfig(id: string): Observable<Record<string, unknown>> {
+    return this.http.post<Record<string, unknown>>(`${this.base}/nodes/${encodeURIComponent(id)}/sync`, {});
   }
 
   listSnapshots(id: string): Observable<Record<string, unknown>[]> {

@@ -82,4 +82,44 @@ describe('AuthService', () => {
     expect(localStorage.getItem('access_token')).toBeNull();
     expect(sessionStorage.getItem('access_token')).toBeNull();
   });
+
+  it('logoutRemote POSTs /auth/logout and clears tokens', done => {
+    const service = TestBed.inject(AuthService);
+    localStorage.setItem('access_token', 'a');
+    localStorage.setItem('refresh_token', 'r');
+
+    service.logoutRemote().subscribe({
+      next: () => {
+        expect(localStorage.getItem('access_token')).toBeNull();
+        expect(localStorage.getItem('refresh_token')).toBeNull();
+        done();
+      },
+      error: done.fail
+    });
+
+    const req = httpMock.expectOne(`${apiBase}/auth/logout`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ refresh_token: 'r' });
+    expect(req.request.headers.get('Authorization')).toBe('Bearer a');
+    req.flush(null, { status: 204, statusText: 'No Content' });
+  });
+
+  it('logoutRemote swallows API errors and still clears tokens', done => {
+    const service = TestBed.inject(AuthService);
+    localStorage.setItem('access_token', 'a');
+    localStorage.setItem('refresh_token', 'r');
+
+    service.logoutRemote().subscribe({
+      next: () => {
+        expect(localStorage.getItem('access_token')).toBeNull();
+        expect(localStorage.getItem('refresh_token')).toBeNull();
+        done();
+      },
+      error: done.fail
+    });
+
+    const req = httpMock.expectOne(`${apiBase}/auth/logout`);
+    expect(req.request.method).toBe('POST');
+    req.flush({ error: 'boom' }, { status: 500, statusText: 'Server Error' });
+  });
 });

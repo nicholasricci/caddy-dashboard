@@ -48,4 +48,39 @@ describe('DashboardApiService', () => {
     expect(req.request.method).toBe('GET');
     req.flush({ ok: true });
   });
+
+  it('ready GETs /ready', done => {
+    service.ready().subscribe({
+      next: () => done(),
+      error: done.fail
+    });
+    const req = httpMock.expectOne(`${apiBase}/ready`);
+    expect(req.request.method).toBe('GET');
+    req.flush({ status: 'ready' });
+  });
+
+  it('syncConfig POSTs /nodes/:id/sync with empty body', done => {
+    service.syncConfig('node-1').subscribe({
+      next: () => done(),
+      error: done.fail
+    });
+    const req = httpMock.expectOne(`${apiBase}/nodes/node-1/sync`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({});
+    expect(req.request.params.keys().length).toBe(0);
+    req.flush({ status: 'ok' });
+  });
+
+  it('listAuditLogs GETs /audit', done => {
+    service.listAuditLogs().subscribe({
+      next: rows => {
+        expect(rows.length).toBe(1);
+        done();
+      },
+      error: done.fail
+    });
+    const req = httpMock.expectOne(`${apiBase}/audit`);
+    expect(req.request.method).toBe('GET');
+    req.flush([{ id: 'a1', action: 'user.update' }]);
+  });
 });

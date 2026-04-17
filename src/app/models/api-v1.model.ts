@@ -50,6 +50,16 @@ export interface UserV1 {
   updated_at?: string;
 }
 
+export interface AuditLogEntryV1 {
+  id?: string;
+  action?: string;
+  actor?: string;
+  target?: string;
+  details?: Record<string, unknown> | string;
+  created_at?: string;
+  [key: string]: unknown;
+}
+
 export interface LoginRequestV1 {
   username: string;
   password: string;

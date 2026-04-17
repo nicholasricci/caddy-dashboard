@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpBackend, HttpClient } from '@angular/common/http';
-import { BehaviorSubject, Observable, catchError, finalize, map, share, tap, throwError } from 'rxjs';
+import { BehaviorSubject, Observable, catchError, finalize, map, of, share, tap, throwError } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { decodeJwtPayload } from '../core/jwt.util';
 import { LoginRequestV1, SessionUserV1, TokenMapV1 } from '../models/api-v1.model';
@@ -176,6 +176,21 @@ export class AuthService {
   logout(): void {
     this.clearStoredTokens();
     this.userSubject.next(null);
+  }
+
+  logoutRemote(): Observable<void> {
+    const refreshToken = this.tokenStorage.getItem(REFRESH_KEY);
+    const accessToken = this.getAccessToken();
+    if (!refreshToken) {
+      this.logout();
+      return of(void 0);
+    }
+
+    const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined;
+    return this.httpRaw.post<void>(`${this.apiUrl}/auth/logout`, { refresh_token: refreshToken }, { headers }).pipe(
+      catchError(() => of(void 0)),
+      tap(() => this.logout())
+    );
   }
 
   /** Clears tokens from both storages so logout is complete after persistence mode changes. */

@@ -4,6 +4,7 @@ import { RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { DashboardApiService } from '../../services/dashboard-api.service';
 import { StitchIconComponent } from '../../ui/stitch-icon.component';
+import type { CaddyNodeV1 } from '../../models/api-v1.model';
 import {
   defaultNodeCreateDraft,
   mapCaddyNodeV1ToListItem,
@@ -11,6 +12,24 @@ import {
   type NodeCreateDraftVm,
   type NodeListItemVm
 } from './nodes-page.vm';
+
+function normalizeNodeRows(rows: unknown): CaddyNodeV1[] {
+  if (Array.isArray(rows)) {
+    return rows as CaddyNodeV1[];
+  }
+  if (!rows || typeof rows !== 'object') {
+    return [];
+  }
+
+  const obj = rows as Record<string, unknown>;
+  const candidates = [obj['items'], obj['nodes'], obj['data']];
+  for (const value of candidates) {
+    if (Array.isArray(value)) {
+      return value as CaddyNodeV1[];
+    }
+  }
+  return [];
+}
 
 @Component({
   selector: 'app-nodes-page',
@@ -307,7 +326,7 @@ export class NodesPageComponent {
     this.error.set(null);
     this.api.listNodes().subscribe({
       next: rows => {
-        this.nodes.set((rows ?? []).map(mapCaddyNodeV1ToListItem));
+        this.nodes.set(normalizeNodeRows(rows).map(mapCaddyNodeV1ToListItem));
         this.loading.set(false);
       },
       error: err => {

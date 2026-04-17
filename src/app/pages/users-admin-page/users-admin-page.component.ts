@@ -5,6 +5,24 @@ import { DashboardApiService } from '../../services/dashboard-api.service';
 import type { UserV1 } from '../../models/api-v1.model';
 import { StitchIconComponent } from '../../ui/stitch-icon.component';
 
+function normalizeUsers(rows: unknown): UserV1[] {
+  if (Array.isArray(rows)) {
+    return rows as UserV1[];
+  }
+  if (!rows || typeof rows !== 'object') {
+    return [];
+  }
+
+  const obj = rows as Record<string, unknown>;
+  const candidates = [obj['items'], obj['users'], obj['data']];
+  for (const value of candidates) {
+    if (Array.isArray(value)) {
+      return value as UserV1[];
+    }
+  }
+  return [];
+}
+
 @Component({
   selector: 'app-users-admin-page',
   standalone: true,
@@ -206,7 +224,7 @@ export class UsersAdminPageComponent {
     this.loading.set(true);
     this.api.listUsers().subscribe({
       next: rows => {
-        this.users.set(rows ?? []);
+        this.users.set(normalizeUsers(rows));
         this.loading.set(false);
       },
       error: err => {

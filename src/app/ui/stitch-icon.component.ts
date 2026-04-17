@@ -185,6 +185,14 @@ import { Component, computed, input } from '@angular/core';
             d="M6.429 9.75L2.25 12l4.179 2.25m0-4.5l5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0l4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0l-5.571 3-5.571-3"
           />
         }
+        @case ('audit') {
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="1.75"
+            d="M9 12.75L11.25 15 15 9.75M6.375 3.75h11.25c.621 0 1.125.504 1.125 1.125v14.25c0 .621-.504 1.125-1.125 1.125H6.375a1.125 1.125 0 01-1.125-1.125V4.875c0-.621.504-1.125 1.125-1.125z"
+          />
+        }
         @default {
           <path
             stroke-linecap="round"
@@ -222,6 +230,7 @@ export class StitchIconComponent {
     | 'sparkles'
     | 'chart'
     | 'circleStack'
+    | 'audit'
   >();
 
   size = input<'xs' | 'sm' | 'md' | 'lg'>('sm');

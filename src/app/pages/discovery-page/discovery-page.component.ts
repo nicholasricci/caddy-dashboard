@@ -21,6 +21,24 @@ interface DiscoveryModalDraft {
   enabled: boolean;
 }
 
+function normalizeDiscoveryRows(rows: unknown): DiscoveryConfigV1[] {
+  if (Array.isArray(rows)) {
+    return rows as DiscoveryConfigV1[];
+  }
+  if (!rows || typeof rows !== 'object') {
+    return [];
+  }
+
+  const obj = rows as Record<string, unknown>;
+  const candidates = [obj['items'], obj['discovery'], obj['data']];
+  for (const value of candidates) {
+    if (Array.isArray(value)) {
+      return value as DiscoveryConfigV1[];
+    }
+  }
+  return [];
+}
+
 function coerceMethod(m: string | undefined): DiscoveryMethodId {
   if (m === 'aws_tag' || m === 'static_ip' || m === 'aws_ssm') {
     return m;
@@ -534,7 +552,7 @@ export class DiscoveryPageComponent {
     this.loading.set(true);
     this.api.listDiscovery().subscribe({
       next: rows => {
-        this.configs.set(rows ?? []);
+        this.configs.set(normalizeDiscoveryRows(rows));
         this.loading.set(false);
       },
       error: err => {

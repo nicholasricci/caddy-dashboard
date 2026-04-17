@@ -9,4 +9,8 @@ export class SystemApiService extends ApiBaseService {
   health(): Observable<unknown> {
     return this.http.get(`${this.base}/health`);
   }
+
+  ready(): Observable<unknown> {
+    return this.http.get(`${this.base}/ready`);
+  }
 }

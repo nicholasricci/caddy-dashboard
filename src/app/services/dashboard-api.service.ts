@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import {
+  AuditLogEntryV1,
   ApplyConfigRequestV1,
   CaddyNodeV1,
   CreateUserRequestV1,
@@ -8,6 +9,7 @@ import {
   UpdateUserRequestV1,
   UserV1
 } from '../models/api-v1.model';
+import { AuditApiService } from './api/audit-api.service';
 import { DiscoveryApiService } from './api/discovery-api.service';
 import { NodesApiService } from './api/nodes-api.service';
 import { SystemApiService } from './api/system-api.service';
@@ -22,12 +24,17 @@ import { UsersApiService } from './api/users-api.service';
 })
 export class DashboardApiService {
   private readonly system = inject(SystemApiService);
+  private readonly audit = inject(AuditApiService);
   private readonly nodes = inject(NodesApiService);
   private readonly discovery = inject(DiscoveryApiService);
   private readonly users = inject(UsersApiService);
 
   health(): Observable<unknown> {
     return this.system.health();
+  }
+
+  ready(): Observable<unknown> {
+    return this.system.ready();
   }
 
   listNodes(): Observable<CaddyNodeV1[]> {
@@ -62,8 +69,8 @@ export class DashboardApiService {
     return this.nodes.getLiveNodeConfig(id);
   }
 
-  syncConfig(id: string, options?: { persistSnapshot?: boolean }): Observable<Record<string, unknown>> {
-    return this.nodes.syncConfig(id, options);
+  syncConfig(id: string): Observable<Record<string, unknown>> {
+    return this.nodes.syncConfig(id);
   }
 
   listSnapshots(id: string): Observable<Record<string, unknown>[]> {
@@ -92,6 +99,10 @@ export class DashboardApiService {
 
   runDiscovery(id: string): Observable<unknown> {
     return this.discovery.runDiscovery(id);
+  }
+
+  listAuditLogs(): Observable<AuditLogEntryV1[]> {
+    return this.audit.listAuditLogs();
   }
 
   listUsers(): Observable<UserV1[]> {

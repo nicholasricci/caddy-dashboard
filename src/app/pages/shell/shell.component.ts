@@ -59,6 +59,14 @@ import { StitchIconComponent } from '../../ui/stitch-icon.component';
               <app-stitch-icon name="users" />
               <span>User management</span>
             </a>
+            <a
+              routerLink="/admin/audit"
+              routerLinkActive="bg-stitch-surface text-stitch-on-surface font-medium border-l-2 border-stitch-primary pl-[calc(0.75rem-2px)]"
+              class="flex items-center gap-3 px-3 py-3 text-sm text-stitch-on-surface-variant hover:bg-stitch-surface-container/50 rounded-sm transition-colors border-l-2 border-transparent"
+            >
+              <app-stitch-icon name="audit" />
+              <span>Audit log</span>
+            </a>
           }
         </nav>
 
@@ -121,14 +129,16 @@ export class ShellComponent implements OnInit {
   readonly apiConnected = signal<boolean | null>(null);
 
   ngOnInit(): void {
-    this.api.health().subscribe({
+    this.api.ready().subscribe({
       next: () => this.apiConnected.set(true),
       error: () => this.apiConnected.set(false)
     });
   }
 
   logout(): void {
-    this.auth.logout();
-    void this.router.navigate(['/login']);
+    this.auth.logoutRemote().subscribe({
+      next: () => void this.router.navigate(['/login']),
+      error: () => void this.router.navigate(['/login'])
+    });
   }
 }

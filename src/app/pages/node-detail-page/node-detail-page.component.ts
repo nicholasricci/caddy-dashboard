@@ -11,10 +11,8 @@ import {
   afterNextRender
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
-import { catchError, map, throwError } from 'rxjs';
 import { DashboardApiService } from '../../services/dashboard-api.service';
 import loader from '@monaco-editor/loader';
 import type { editor } from 'monaco-editor';
@@ -25,6 +23,24 @@ import {
   extractConfigFromSnapshotRecord,
   isLikelyCaddyConfigRoot
 } from './node-detail-sync.util';
+
+function normalizeSnapshots(rows: unknown): Record<string, unknown>[] {
+  if (Array.isArray(rows)) {
+    return rows as Record<string, unknown>[];
+  }
+  if (!rows || typeof rows !== 'object') {
+    return [];
+  }
+
+  const obj = rows as Record<string, unknown>;
+  const candidates = [obj['items'], obj['snapshots'], obj['data']];
+  for (const value of candidates) {
+    if (Array.isArray(value)) {
+      return value as Record<string, unknown>[];
+    }
+  }
+  return [];
+}
 
 @Component({
   selector: 'app-node-detail-page',
@@ -552,58 +568,27 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
   private bootstrapLiveConfig(): void {
     this.busy.set(true);
     this.err.set(null);
-    this.api
-      .getLiveNodeConfig(this.nodeId)
-      .pipe(
-        map(body => ({ source: 'live' as const, body })),
-        catchError((err: HttpErrorResponse) => {
-          const status = err.status;
-          if (status === 404 || status === 405 || status === 501) {
-            return this.api.syncConfig(this.nodeId, { persistSnapshot: false }).pipe(
-              map(syncRes => ({ source: 'sync-fallback' as const, syncRes }))
-            );
-          }
-          return throwError(() => err);
-        })
-      )
-      .subscribe({
-        next: payload => {
-          if (payload.source === 'live') {
-            if (this.applyLiveConfigBody(payload.body)) {
-              this.message.set('Loaded live configuration from the node (no snapshot persisted).');
-              this.err.set(null);
-              this.editorOk.set(true);
-            } else {
-              this.monacoEditor?.setValue(
-                '{\n  "_hint": "Live config response was empty or not usable JSON. Try Sync or check the backend."\n}'
-              );
-              this.err.set('Live config endpoint returned no usable configuration.');
-            }
-          } else {
-            const cfg = extractCaddyConfigFromSyncResponse(payload.syncRes);
-            if (cfg && this.monacoEditor) {
-              this.monacoEditor.setValue(JSON.stringify(cfg, null, 2));
-              this.message.set(
-                'Live config GET unavailable; used sync fallback. Snapshot persistence still depends on your backend.'
-              );
-              this.err.set(null);
-              this.editorOk.set(true);
-            } else {
-              this.monacoEditor?.setValue(
-                '{\n  "_hint": "Sync did not return recognizable config JSON. Ensure the backend includes config in the sync response when using persist_snapshot=false."\n}'
-              );
-              this.err.set('Sync completed but no configuration payload was recognized.');
-            }
-          }
-          this.busy.set(false);
-          this.layoutMainEditorSoon();
-        },
-        error: err => {
-          this.busy.set(false);
-          this.err.set(err?.error?.error || 'Could not load live configuration');
-          this.layoutMainEditorSoon();
+    this.api.getLiveNodeConfig(this.nodeId).subscribe({
+      next: body => {
+        if (this.applyLiveConfigBody(body)) {
+          this.message.set('Loaded live configuration from the node.');
+          this.err.set(null);
+          this.editorOk.set(true);
+        } else {
+          this.monacoEditor?.setValue(
+            '{\n  "_hint": "Live config response was empty or not usable JSON. Try Sync or check the backend."\n}'
+          );
+          this.err.set('Live config endpoint returned no usable configuration.');
         }
-      });
+        this.busy.set(false);
+        this.layoutMainEditorSoon();
+      },
+      error: err => {
+        this.busy.set(false);
+        this.err.set(err?.error?.error ?? 'Could not load live configuration');
+        this.layoutMainEditorSoon();
+      }
+    });
   }
 
   /** Returns true if editor was updated from the live endpoint body. */
@@ -690,7 +675,7 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
     this.snapLoading.set(true);
     this.api.listSnapshots(this.nodeId).subscribe({
       next: rows => {
-        this.snapshots.set(rows ?? []);
+        this.snapshots.set(normalizeSnapshots(rows));
         this.clampSnapPageIndex();
         this.snapLoading.set(false);
       },
