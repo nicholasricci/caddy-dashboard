@@ -11,7 +11,7 @@ import {
   Injector,
   afterNextRender
 } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import { ActivatedRoute, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { DashboardApiService } from '../../services/dashboard-api.service';
@@ -48,7 +48,7 @@ function normalizeSnapshots(rows: unknown): Record<string, unknown>[] {
   selector: 'app-node-detail-page',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CommonModule, RouterModule, FormsModule, StitchIconComponent, NodeConfigEditorComponent],
+  imports: [RouterModule, FormsModule, StitchIconComponent, NodeConfigEditorComponent],
   host: {
     class: 'flex w-full flex-1 min-h-0 flex-col'
   },

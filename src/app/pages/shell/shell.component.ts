@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, inject, OnInit, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import { Router, RouterModule, RouterOutlet } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
 import { DashboardApiService } from '../../services/dashboard-api.service';
@@ -9,7 +9,7 @@ import { StitchIconComponent } from '../../ui/stitch-icon.component';
   selector: 'app-shell',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CommonModule, RouterModule, RouterOutlet, StitchIconComponent],
+  imports: [RouterModule, RouterOutlet, StitchIconComponent],
   template: `
     <div class="h-screen overflow-hidden flex bg-stitch-surface text-stitch-on-surface">
       <aside

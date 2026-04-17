@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import { FormArray, FormBuilder, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { rxResource } from '@angular/core/rxjs-interop';
 import { DashboardApiService } from '../../services/dashboard-api.service';
@@ -87,7 +87,7 @@ function parseAddressesText(d: DiscoveryConfigV1): string {
   selector: 'app-discovery-page',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CommonModule, ReactiveFormsModule, StitchIconComponent, DiscoveryRuleFormModalComponent],
+  imports: [ReactiveFormsModule, StitchIconComponent, DiscoveryRuleFormModalComponent],
   template: `
     <div class="px-10 py-12 max-w-6xl mx-auto">
       <header class="mb-10 flex flex-wrap items-start justify-between gap-6">

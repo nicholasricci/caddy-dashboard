@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, inject, signal, computed } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import { RouterModule } from '@angular/router';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { rxResource } from '@angular/core/rxjs-interop';
@@ -33,7 +33,7 @@ function normalizeNodeRows(rows: unknown): CaddyNodeV1[] {
   selector: 'app-nodes-page',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CommonModule, RouterModule, ReactiveFormsModule, StitchIconComponent],
+  imports: [RouterModule, ReactiveFormsModule, StitchIconComponent],
   template: `
     <div class="px-10 py-12 max-w-7xl mx-auto">
       <header class="mb-12 flex flex-wrap items-start justify-between gap-6">

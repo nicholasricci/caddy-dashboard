@@ -1,11 +1,11 @@
-import { CommonModule } from '@angular/common';
+
 import { Component, ElementRef, ViewChild, input, output } from '@angular/core';
 import { StitchIconComponent } from '../../ui/stitch-icon.component';
 
 @Component({
   selector: 'app-node-config-editor',
   standalone: true,
-  imports: [CommonModule, StitchIconComponent],
+  imports: [StitchIconComponent],
   template: `
     <div class="flex-1 min-w-0 min-h-0 h-full bg-stitch-surface-lowest flex flex-col">
       @if (showToolbar()) {

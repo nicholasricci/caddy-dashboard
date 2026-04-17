@@ -2,14 +2,14 @@ import { ChangeDetectionStrategy, Component, effect, inject, signal } from '@ang
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
-import { CommonModule } from '@angular/common';
+
 import { StitchIconComponent } from '../../ui/stitch-icon.component';
 
 @Component({
   selector: 'app-login',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CommonModule, ReactiveFormsModule, RouterModule, StitchIconComponent],
+  imports: [ReactiveFormsModule, RouterModule, StitchIconComponent],
   template: `
     <div class="min-h-screen flex items-center justify-center p-8 bg-stitch-surface-low">
       <div class="w-full max-w-md stitch-panel stitch-panel--dim rounded-sm shadow-sm p-12">

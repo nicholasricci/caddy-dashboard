@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import { FormArray, FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { StitchIconComponent } from '../../ui/stitch-icon.component';
 
@@ -27,7 +27,7 @@ type DiscoveryRuleForm = FormGroup<{
 @Component({
   selector: 'app-discovery-rule-form-modal',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CommonModule, ReactiveFormsModule, StitchIconComponent],
+  imports: [ReactiveFormsModule, StitchIconComponent],
   template: `
     @if (open()) {
       <div

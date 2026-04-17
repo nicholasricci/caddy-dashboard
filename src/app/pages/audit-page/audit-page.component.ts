@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, OnInit, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import { rxResource } from '@angular/core/rxjs-interop';
 import type { AuditLogEntryV1 } from '../../models/api-v1.model';
 import { DashboardApiService } from '../../services/dashboard-api.service';
@@ -25,7 +25,7 @@ function toAuditEntries(rows: unknown): AuditLogEntryV1[] {
   selector: 'app-audit-page',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CommonModule, StitchIconComponent],
+  imports: [StitchIconComponent],
   template: `
     <div class="px-10 py-12 max-w-6xl mx-auto">
       <header class="mb-10 flex flex-wrap items-start justify-between gap-6">
