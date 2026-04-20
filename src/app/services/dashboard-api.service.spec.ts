@@ -83,4 +83,18 @@ describe('DashboardApiService', () => {
     expect(req.request.method).toBe('GET');
     req.flush([{ id: 'a1', action: 'user.update' }]);
   });
+
+  it('listDiscoverySnapshots GETs /discovery/:id/snapshots', done => {
+    service.listDiscoverySnapshots('disc-1').subscribe({
+      next: rows => {
+        expect(rows.length).toBe(1);
+        expect(rows[0]['id']).toBe('snap-1');
+        done();
+      },
+      error: done.fail
+    });
+    const req = httpMock.expectOne(`${apiBase}/discovery/disc-1/snapshots`);
+    expect(req.request.method).toBe('GET');
+    req.flush({ snapshots: [{ id: 'snap-1' }] });
+  });
 });

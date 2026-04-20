@@ -9,6 +9,7 @@ export interface CaddyNodeV1 {
   name?: string;
   private_ip?: string;
   instance_id?: string;
+  discovery_config_id?: string;
   region?: string;
   ssm_enabled?: boolean;
   status?: string;
@@ -34,6 +35,7 @@ export interface DiscoveryConfigV1 {
   name?: string;
   method?: string;
   enabled?: boolean;
+  snapshot_scope?: SnapshotScopeV1;
   region?: string;
   tag_key?: string;
   tag_value?: string;
@@ -41,6 +43,8 @@ export interface DiscoveryConfigV1 {
   created_at?: string;
   updated_at?: string;
 }
+
+export type SnapshotScopeV1 = 'node' | 'group';
 
 export interface UserV1 {
   id?: string;

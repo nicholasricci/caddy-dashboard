@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
 
 import { FormArray, FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import type { SnapshotScopeV1 } from '../../models/api-v1.model';
 import { StitchIconComponent } from '../../ui/stitch-icon.component';
 
 interface MethodChoice {
@@ -18,6 +19,7 @@ type DiscoveryTagRowForm = FormGroup<{
 type DiscoveryRuleForm = FormGroup<{
   name: FormControl<string>;
   method: FormControl<'aws_ssm' | 'aws_tag' | 'static_ip'>;
+  snapshotScope: FormControl<SnapshotScopeV1>;
   region: FormControl<string>;
   tagRows: FormArray<DiscoveryTagRowForm>;
   addressesText: FormControl<string>;
@@ -86,6 +88,36 @@ type DiscoveryRuleForm = FormGroup<{
                     </span>
                   </button>
                 }
+              </div>
+            </fieldset>
+
+            <fieldset class="border-0 p-0 m-0 min-w-0">
+              <legend class="text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium mb-3">Snapshot scope</legend>
+              <div class="grid gap-3 sm:grid-cols-2" role="group" aria-label="Snapshot scope">
+                <button
+                  type="button"
+                  class="stitch-panel text-left p-4 transition-colors border-stitch-ghost hover:bg-stitch-surface-low"
+                  [class.ring-2]="currentSnapshotScope() === 'node'"
+                  [class.ring-stitch-primary]="currentSnapshotScope() === 'node'"
+                  [class.bg-stitch-surface-low]="currentSnapshotScope() === 'node'"
+                  [attr.aria-pressed]="currentSnapshotScope() === 'node'"
+                  (click)="snapshotScopeChanged.emit('node')"
+                >
+                  <span class="block font-display font-semibold text-sm text-stitch-on-surface">Node</span>
+                  <span class="block text-xs text-stitch-on-surface-variant mt-1 leading-snug">Store and load snapshots per node.</span>
+                </button>
+                <button
+                  type="button"
+                  class="stitch-panel text-left p-4 transition-colors border-stitch-ghost hover:bg-stitch-surface-low"
+                  [class.ring-2]="currentSnapshotScope() === 'group'"
+                  [class.ring-stitch-primary]="currentSnapshotScope() === 'group'"
+                  [class.bg-stitch-surface-low]="currentSnapshotScope() === 'group'"
+                  [attr.aria-pressed]="currentSnapshotScope() === 'group'"
+                  (click)="snapshotScopeChanged.emit('group')"
+                >
+                  <span class="block font-display font-semibold text-sm text-stitch-on-surface">Group</span>
+                  <span class="block text-xs text-stitch-on-surface-variant mt-1 leading-snug">Share snapshots across nodes discovered by this rule.</span>
+                </button>
               </div>
             </fieldset>
 
@@ -186,6 +218,7 @@ export class DiscoveryRuleFormModalComponent {
   readonly saveRequested = output<void>();
   readonly cancelRequested = output<void>();
   readonly methodChanged = output<'aws_ssm' | 'aws_tag' | 'static_ip'>();
+  readonly snapshotScopeChanged = output<SnapshotScopeV1>();
   readonly addTagRequested = output<void>();
   readonly removeTagRequested = output<number>();
 
@@ -195,5 +228,9 @@ export class DiscoveryRuleFormModalComponent {
 
   tagRows(): FormArray<DiscoveryTagRowForm> {
     return this.form().controls.tagRows;
+  }
+
+  currentSnapshotScope(): SnapshotScopeV1 {
+    return this.form().controls.snapshotScope.value;
   }
 }

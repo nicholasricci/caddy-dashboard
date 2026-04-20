@@ -3,7 +3,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { FormArray, FormBuilder, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { rxResource } from '@angular/core/rxjs-interop';
 import { DashboardApiService } from '../../services/dashboard-api.service';
-import type { DiscoveryConfigV1, DiscoveryParametersV1, DiscoveryTagPairV1 } from '../../models/api-v1.model';
+import type { DiscoveryConfigV1, DiscoveryParametersV1, DiscoveryTagPairV1, SnapshotScopeV1 } from '../../models/api-v1.model';
 import { StitchIconComponent } from '../../ui/stitch-icon.component';
 import { ConfirmService } from '../../ui/confirm.service';
 import { DiscoveryRuleFormModalComponent } from './discovery-rule-form-modal.component';
@@ -19,6 +19,7 @@ interface TagRowDraft {
 interface DiscoveryModalDraft {
   name: string;
   method: DiscoveryMethodId;
+  snapshotScope: SnapshotScopeV1;
   region: string;
   tagRows: TagRowDraft[];
   addressesText: string;
@@ -184,6 +185,9 @@ function parseAddressesText(d: DiscoveryConfigV1): string {
                     <p class="text-xs mt-3">
                       <span class="stitch-status-chip">{{ d.enabled !== false ? 'enabled' : 'disabled' }}</span>
                     </p>
+                    <p class="text-xs mt-3 text-stitch-on-surface-variant font-mono">
+                      snapshots: {{ d.snapshot_scope || 'node' }}
+                    </p>
                   </div>
                   <div class="flex flex-wrap gap-3">
                     <button
@@ -270,6 +274,7 @@ function parseAddressesText(d: DiscoveryConfigV1): string {
         (cancelRequested)="closeModal()"
         (saveRequested)="save()"
         (methodChanged)="setMethod($event)"
+        (snapshotScopeChanged)="setSnapshotScope($event)"
         (addTagRequested)="addTagRow()"
         (removeTagRequested)="removeTagRow($event)"
       />
@@ -303,6 +308,8 @@ export class DiscoveryPageComponent {
   ];
 
   private readonly refreshVersion = signal(0);
+  private readonly optimisticConfigsById = signal<Record<string, DiscoveryConfigV1>>({});
+  private readonly pendingSnapshotScopeById = signal<Record<string, SnapshotScopeV1>>({});
   readonly actionError = signal<string | null>(null);
   readonly configsResource = rxResource({
     stream: () => {
@@ -310,7 +317,32 @@ export class DiscoveryPageComponent {
       return this.api.listDiscovery();
     }
   });
-  readonly configs = computed(() => normalizeDiscoveryRows(this.configsResource.value() as unknown));
+  readonly configs = computed(() => {
+    const rows = normalizeDiscoveryRows(this.configsResource.value() as unknown);
+    const optimisticById = this.optimisticConfigsById();
+    const pending = this.pendingSnapshotScopeById();
+    const merged: DiscoveryConfigV1[] = rows.map(row => {
+      const id = row.id ?? '';
+      const optimistic = id ? optimisticById[id] : undefined;
+      return optimistic ? { ...row, ...optimistic, id } : row;
+    });
+    if (Object.keys(optimisticById).length > 0) {
+      const knownIds = new Set(merged.map(row => row.id ?? '').filter(id => id.length > 0));
+      for (const [id, cfg] of Object.entries(optimisticById)) {
+        if (!knownIds.has(id)) {
+          merged.push(cfg);
+        }
+      }
+    }
+    if (Object.keys(pending).length === 0) {
+      return merged;
+    }
+    return merged.map(row => {
+      const id = row.id ?? '';
+      const forcedScope = id ? pending[id] : undefined;
+      return forcedScope ? { ...row, snapshot_scope: forcedScope } : row;
+    });
+  });
   readonly loading = computed(() => this.configsResource.isLoading());
   readonly error = computed(() => {
     const actionErr = this.actionError();
@@ -329,6 +361,7 @@ export class DiscoveryPageComponent {
   readonly discoveryForm = this.fb.nonNullable.group({
     name: ['', [Validators.required]],
     method: ['aws_ssm' as DiscoveryMethodId],
+    snapshotScope: ['node' as SnapshotScopeV1],
     region: [''],
     tagRows: this.fb.array([this.createTagRow()]),
     addressesText: [''],
@@ -344,6 +377,7 @@ export class DiscoveryPageComponent {
     return {
       name: '',
       method: 'aws_ssm',
+      snapshotScope: 'node',
       region: '',
       tagRows: [{ key: '', value: '' }],
       addressesText: '',
@@ -411,6 +445,7 @@ export class DiscoveryPageComponent {
     const draft: DiscoveryModalDraft = {
       name: d.name ?? '',
       method: coerceMethod(d.method),
+      snapshotScope: d.snapshot_scope === 'group' ? 'group' : 'node',
       region: coerceMethod(d.method) !== 'static_ip' ? (d.region ?? '') : '',
       tagRows: parseTagRowsFromConfig(d),
       addressesText: parseAddressesText(d),
@@ -429,6 +464,10 @@ export class DiscoveryPageComponent {
     this.syncMethodValidators(m);
   }
 
+  setSnapshotScope(scope: SnapshotScopeV1): void {
+    this.discoveryForm.controls.snapshotScope.setValue(scope);
+  }
+
   addTagRow(): void {
     this.tagRows().push(this.createTagRow());
   }
@@ -445,10 +484,11 @@ export class DiscoveryPageComponent {
     const name = value.name?.trim() ?? '';
     const enabled = value.enabled;
     const method = value.method;
+    const snapshotScope = value.snapshotScope;
 
     if (method === 'aws_ssm') {
       const region = value.region?.trim();
-      const body: DiscoveryConfigV1 = { name, method, enabled, parameters: {} };
+      const body: DiscoveryConfigV1 = { name, method, enabled, snapshot_scope: snapshotScope, parameters: {} };
       if (region) {
         body.region = region;
       }
@@ -465,6 +505,7 @@ export class DiscoveryPageComponent {
         name,
         method,
         enabled,
+        snapshot_scope: snapshotScope,
         parameters: { tags }
       };
       if (region) {
@@ -485,6 +526,7 @@ export class DiscoveryPageComponent {
       name,
       method,
       enabled,
+      snapshot_scope: snapshotScope,
       parameters: { addresses }
     };
   }
@@ -498,7 +540,21 @@ export class DiscoveryPageComponent {
     const id = this.editingId();
     const req = id ? this.api.updateDiscovery(id, { ...body, id }) : this.api.createDiscovery(body);
     req.subscribe({
-      next: () => {
+      next: saved => {
+        const savedId = saved.id ?? id ?? '';
+        if (savedId) {
+          const optimisticRow: DiscoveryConfigV1 = {
+            ...body,
+            ...saved,
+            id: savedId
+          };
+          this.optimisticConfigsById.update(current => ({
+            ...current,
+            [savedId]: optimisticRow
+          }));
+          const scope = body.snapshot_scope === 'group' ? 'group' : 'node';
+          this.pendingSnapshotScopeById.update(current => ({ ...current, [savedId]: scope }));
+        }
         this.saving.set(false);
         this.showModal.set(false);
         this.load();
@@ -567,6 +623,7 @@ export class DiscoveryPageComponent {
   private resetForm(draft: DiscoveryModalDraft): void {
     this.discoveryForm.controls.name.setValue(draft.name);
     this.discoveryForm.controls.method.setValue(draft.method);
+    this.discoveryForm.controls.snapshotScope.setValue(draft.snapshotScope);
     this.discoveryForm.controls.region.setValue(draft.region);
     this.discoveryForm.controls.addressesText.setValue(draft.addressesText);
     this.discoveryForm.controls.enabled.setValue(draft.enabled);

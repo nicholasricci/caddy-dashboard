@@ -81,6 +81,10 @@ export class DashboardApiService {
     return this.discovery.listDiscovery();
   }
 
+  listDiscoverySnapshots(id: string): Observable<Record<string, unknown>[]> {
+    return this.discovery.listDiscoverySnapshots(id);
+  }
+
   getDiscovery(id: string): Observable<DiscoveryConfigV1> {
     return this.discovery.getDiscovery(id);
   }

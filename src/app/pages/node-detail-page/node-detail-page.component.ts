@@ -17,7 +17,7 @@ import { FormsModule } from '@angular/forms';
 import { DashboardApiService } from '../../services/dashboard-api.service';
 import loader from '@monaco-editor/loader';
 import type { editor } from 'monaco-editor';
-import type { CaddyNodeV1 } from '../../models/api-v1.model';
+import type { CaddyNodeV1, SnapshotScopeV1 } from '../../models/api-v1.model';
 import { StitchIconComponent } from '../../ui/stitch-icon.component';
 import { NodeConfigEditorComponent } from './node-config-editor.component';
 import {
@@ -159,6 +159,7 @@ function normalizeSnapshots(rows: unknown): Record<string, unknown>[] {
             >
               <app-stitch-icon name="circleStack" size="xs" />
               Snapshots
+              <span class="stitch-status-chip">source: {{ snapshotSource() }}</span>
             </h3>
             @if (snapLoading()) {
               <span class="loading loading-spinner loading-sm text-stitch-on-surface-variant"></span>
@@ -334,6 +335,7 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
   readonly nodeId = this.route.snapshot.paramMap.get('id') || '';
   readonly node = signal<CaddyNodeV1 | null>(null);
   readonly snapshots = signal<Record<string, unknown>[]>([]);
+  readonly snapshotSource = signal<SnapshotScopeV1>('node');
   /** Client-side page size (API returns full list; no offset/limit in v1 swagger). */
   readonly snapPageSize = 10;
   readonly snapPageIndex = signal(0);
@@ -385,7 +387,6 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
   ngAfterViewInit(): void {
     if (this.nodeId) {
       this.loadNode();
-      this.loadSnapshots();
     }
     void this.initEditor();
   }
@@ -644,13 +645,55 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
 
   private loadNode(): void {
     this.api.getNode(this.nodeId).subscribe({
-      next: n => this.node.set(n),
+      next: n => {
+        this.node.set(n);
+        this.loadSnapshots();
+      },
       error: () => this.err.set('Could not load node')
     });
   }
 
   loadSnapshots(): void {
+    const currentNode = this.node();
+    if (!currentNode) {
+      return;
+    }
+
+    const discoveryId = currentNode.discovery_config_id?.trim();
+    if (!discoveryId) {
+      this.loadNodeSnapshots();
+      return;
+    }
+
     this.snapLoading.set(true);
+    this.api.getDiscovery(discoveryId).subscribe({
+      next: discovery => {
+        if (discovery.snapshot_scope === 'group') {
+          this.api.listDiscoverySnapshots(discoveryId).subscribe({
+            next: rows => {
+              this.snapshotSource.set('group');
+              this.snapshots.set(normalizeSnapshots(rows));
+              this.clampSnapPageIndex();
+              this.snapLoading.set(false);
+            },
+            error: () => {
+              this.snapLoading.set(false);
+              this.loadNodeSnapshots();
+            }
+          });
+          return;
+        }
+        this.loadNodeSnapshots();
+      },
+      error: () => {
+        this.loadNodeSnapshots();
+      }
+    });
+  }
+
+  private loadNodeSnapshots(): void {
+    this.snapLoading.set(true);
+    this.snapshotSource.set('node');
     this.api.listSnapshots(this.nodeId).subscribe({
       next: rows => {
         this.snapshots.set(normalizeSnapshots(rows));

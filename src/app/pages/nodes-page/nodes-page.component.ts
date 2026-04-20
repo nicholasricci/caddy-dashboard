@@ -3,12 +3,18 @@ import { ChangeDetectionStrategy, Component, inject, signal, computed } from '@a
 import { RouterModule } from '@angular/router';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { rxResource } from '@angular/core/rxjs-interop';
-import { map } from 'rxjs';
+import { forkJoin, map } from 'rxjs';
 import { DashboardApiService } from '../../services/dashboard-api.service';
 import { StitchIconComponent } from '../../ui/stitch-icon.component';
 import { ConfirmService } from '../../ui/confirm.service';
-import type { CaddyNodeV1 } from '../../models/api-v1.model';
-import { defaultNodeCreateDraft, mapCaddyNodeV1ToListItem, mapNodeCreateDraftToPayload, type NodeListItemVm } from './nodes-page.vm';
+import type { CaddyNodeV1, DiscoveryConfigV1 } from '../../models/api-v1.model';
+import {
+  buildDiscoveryGroups,
+  defaultNodeCreateDraft,
+  mapCaddyNodeV1ToListItem,
+  mapNodeCreateDraftToPayload,
+  type NodeListItemVm
+} from './nodes-page.vm';
 import { extractApiError } from '../../core/http-error.util';
 
 function normalizeNodeRows(rows: unknown): CaddyNodeV1[] {
@@ -24,6 +30,24 @@ function normalizeNodeRows(rows: unknown): CaddyNodeV1[] {
   for (const value of candidates) {
     if (Array.isArray(value)) {
       return value as CaddyNodeV1[];
+    }
+  }
+  return [];
+}
+
+function normalizeDiscoveryRows(rows: unknown): DiscoveryConfigV1[] {
+  if (Array.isArray(rows)) {
+    return rows as DiscoveryConfigV1[];
+  }
+  if (!rows || typeof rows !== 'object') {
+    return [];
+  }
+
+  const obj = rows as Record<string, unknown>;
+  const candidates = [obj['items'], obj['discovery'], obj['data']];
+  for (const value of candidates) {
+    if (Array.isArray(value)) {
+      return value as DiscoveryConfigV1[];
     }
   }
   return [];
@@ -116,62 +140,96 @@ function normalizeNodeRows(rows: unknown): CaddyNodeV1[] {
           </button>
         </div>
       } @else {
-        <div class="overflow-x-auto rounded-sm stitch-panel p-0 border-stitch-ghost">
-          <table class="table w-full border-collapse">
-            <thead>
-              <tr class="text-[11px] uppercase tracking-wider text-stitch-on-surface-variant border-b border-stitch-ghost">
-                <th class="font-medium py-6 px-4 text-left align-bottom">Name</th>
-                <th class="font-medium py-6 px-4 text-left align-bottom">Status</th>
-                <th class="font-mono text-[11px] py-6 px-4 text-left align-bottom">Private IP</th>
-                <th class="font-mono text-[11px] py-6 px-4 text-left align-bottom">Instance</th>
-                <th class="font-medium py-6 px-4 text-left align-bottom">Region</th>
-                <th class="font-medium py-6 px-4 text-left align-bottom">SSM</th>
-                <th class="py-6 px-4"></th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (n of nodes(); track n.id; let i = $index) {
-                <tr
-                  class="text-sm hover:bg-stitch-surface-container/40 transition-colors"
-                  [class.bg-transparent]="i % 2 === 0"
-                  [class.bg-stitch-surface-low/80]="i % 2 !== 0"
-                >
-                  <td class="py-6 px-4 font-medium align-middle">{{ n.name || '—' }}</td>
-                  <td class="py-6 px-4 align-middle">
-                    <span class="stitch-status-chip">{{ n.status || 'unknown' }}</span>
-                  </td>
-                  <td class="py-6 px-4 font-mono text-xs align-middle text-stitch-on-surface">
-                    {{ n.private_ip || '—' }}
-                  </td>
-                  <td
-                    class="py-6 px-4 font-mono text-xs truncate max-w-[10rem] align-middle"
-                    [title]="n.instance_id || ''"
+        <div class="space-y-4">
+          @for (group of discoveryGroups(); track group.id) {
+            <section class="stitch-panel p-0 overflow-hidden">
+              <header class="px-4 py-4 border-b border-stitch-ghost flex flex-wrap items-center justify-between gap-3">
+                <div class="min-w-0">
+                  <h3 class="font-display font-semibold text-base text-stitch-on-surface">{{ group.name }}</h3>
+                  <p class="text-xs font-mono text-stitch-on-surface-variant mt-1">
+                    {{ group.method }}
+                    @if (group.region) {
+                      <span> · {{ group.region }}</span>
+                    }
+                    <span> · snapshots: {{ group.snapshot_scope }}</span>
+                    @if (!group.isUnassigned) {
+                      <span> · {{ group.enabled ? 'enabled' : 'disabled' }}</span>
+                    }
+                  </p>
+                </div>
+                @if (group.isUnassigned) {
+                  <button
+                    type="button"
+                    class="btn-stitch-secondary btn-stitch-secondary--sm stitch-icon-btn"
+                    (click)="openCreate()"
                   >
-                    {{ n.instance_id || '—' }}
-                  </td>
-                  <td class="py-6 px-4 align-middle">{{ n.region || '—' }}</td>
-                  <td class="py-6 px-4 align-middle font-mono text-xs">{{ n.ssm_enabled ? 'Yes' : 'No' }}</td>
-                  <td class="py-6 px-4 text-right align-middle whitespace-nowrap">
-                    <a
-                      class="text-sm text-stitch-primary-fixed hover:text-stitch-on-surface mr-3 inline-flex items-center gap-1"
-                      [routerLink]="['/nodes', n.id]"
-                    >
-                      <app-stitch-icon name="configure" size="xs" />
-                      Configure
-                    </a>
-                    <button
-                      type="button"
-                      class="text-sm text-stitch-error hover:underline inline-flex items-center gap-1"
-                      (click)="remove(n)"
-                    >
-                      <app-stitch-icon name="trash" size="xs" />
-                      Delete
-                    </button>
-                  </td>
-                </tr>
+                    <app-stitch-icon name="plus" size="xs" />
+                    Add node
+                  </button>
+                }
+              </header>
+
+              @if (group.nodes.length === 0) {
+                <p class="px-4 py-6 text-sm text-stitch-on-surface-variant">No nodes in this group.</p>
+              } @else {
+                <div class="overflow-x-auto">
+                  <table class="table w-full border-collapse">
+                    <thead>
+                      <tr class="text-[11px] uppercase tracking-wider text-stitch-on-surface-variant border-b border-stitch-ghost">
+                        <th class="font-medium py-4 px-4 text-left align-bottom">Name</th>
+                        <th class="font-medium py-4 px-4 text-left align-bottom">Status</th>
+                        <th class="font-mono text-[11px] py-4 px-4 text-left align-bottom">Private IP</th>
+                        <th class="font-mono text-[11px] py-4 px-4 text-left align-bottom">Instance</th>
+                        <th class="font-medium py-4 px-4 text-left align-bottom">Region</th>
+                        <th class="font-medium py-4 px-4 text-left align-bottom">SSM</th>
+                        <th class="py-4 px-4"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (n of group.nodes; track n.id; let i = $index) {
+                        <tr
+                          class="text-sm hover:bg-stitch-surface-container/40 transition-colors"
+                          [class.bg-transparent]="i % 2 === 0"
+                          [class.bg-stitch-surface-low/80]="i % 2 !== 0"
+                        >
+                          <td class="py-4 px-4 font-medium align-middle">{{ n.name || '—' }}</td>
+                          <td class="py-4 px-4 align-middle">
+                            <span class="stitch-status-chip">{{ n.status || 'unknown' }}</span>
+                          </td>
+                          <td class="py-4 px-4 font-mono text-xs align-middle text-stitch-on-surface">{{ n.private_ip || '—' }}</td>
+                          <td
+                            class="py-4 px-4 font-mono text-xs truncate max-w-[10rem] align-middle"
+                            [title]="n.instance_id || ''"
+                          >
+                            {{ n.instance_id || '—' }}
+                          </td>
+                          <td class="py-4 px-4 align-middle">{{ n.region || '—' }}</td>
+                          <td class="py-4 px-4 align-middle font-mono text-xs">{{ n.ssm_enabled ? 'Yes' : 'No' }}</td>
+                          <td class="py-4 px-4 text-right align-middle whitespace-nowrap">
+                            <a
+                              class="text-sm text-stitch-primary-fixed hover:text-stitch-on-surface mr-3 inline-flex items-center gap-1"
+                              [routerLink]="['/nodes', n.id]"
+                            >
+                              <app-stitch-icon name="configure" size="xs" />
+                              Configure
+                            </a>
+                            <button
+                              type="button"
+                              class="text-sm text-stitch-error hover:underline inline-flex items-center gap-1"
+                              (click)="remove(n)"
+                            >
+                              <app-stitch-icon name="trash" size="xs" />
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
               }
-            </tbody>
-          </table>
+            </section>
+          }
         </div>
       }
 
@@ -300,13 +358,26 @@ export class NodesPageComponent {
   readonly nodesResource = rxResource({
     stream: () => {
       this.refreshVersion();
-      return this.api.listNodes().pipe(
-        map(rows => normalizeNodeRows(rows).map(mapCaddyNodeV1ToListItem))
+      return forkJoin({
+        nodes: this.api.listNodes(),
+        discovery: this.api.listDiscovery()
+      }).pipe(
+        map(result => ({
+          nodes: normalizeNodeRows(result.nodes).map(mapCaddyNodeV1ToListItem),
+          discovery: normalizeDiscoveryRows(result.discovery)
+        }))
       );
     }
   });
 
-  readonly nodes = computed(() => (this.nodesResource.value() as NodeListItemVm[] | undefined) ?? []);
+  readonly nodes = computed(() => (this.nodesResource.value() as { nodes: NodeListItemVm[] } | undefined)?.nodes ?? []);
+  readonly discoveryGroups = computed(() => {
+    const value = this.nodesResource.value() as { nodes: NodeListItemVm[]; discovery: DiscoveryConfigV1[] } | undefined;
+    if (!value) {
+      return [];
+    }
+    return buildDiscoveryGroups(value.nodes, value.discovery);
+  });
   readonly loading = computed(() => this.nodesResource.isLoading());
   readonly error = computed(() => {
     const actionErr = this.actionError();
