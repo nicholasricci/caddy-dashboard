@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
 
 import { FormArray, FormBuilder, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { rxResource } from '@angular/core/rxjs-interop';
@@ -31,6 +31,17 @@ type DiscoveryTagRowForm = FormGroup<{
   value: FormControl<string>;
 }>;
 
+interface OptimisticDiscoveryEntry {
+  config: DiscoveryConfigV1;
+  expiresAt: number;
+}
+
+const OPTIMISTIC_DISCOVERY_TTL_MS = 15000;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object';
+}
+
 function normalizeDiscoveryRows(rows: unknown): DiscoveryConfigV1[] {
   if (Array.isArray(rows)) {
     return rows as DiscoveryConfigV1[];
@@ -61,8 +72,8 @@ function parseTagRowsFromConfig(d: DiscoveryConfigV1): TagRowDraft[] {
   if (Array.isArray(raw) && raw.length > 0) {
     const rows: TagRowDraft[] = [];
     for (const t of raw) {
-      if (t && typeof t === 'object' && 'key' in t) {
-        const o = t as unknown as Record<string, unknown>;
+      if (isRecord(t) && 'key' in t) {
+        const o = t;
         rows.push({ key: String(o['key'] ?? ''), value: String(o['value'] ?? '') });
       }
     }
@@ -85,10 +96,141 @@ function parseAddressesText(d: DiscoveryConfigV1): string {
 }
 
 @Component({
+  selector: 'app-discovery-rule-card',
+  standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [StitchIconComponent],
+  template: `
+    <div class="stitch-panel flex flex-wrap items-start justify-between gap-6" [class.stitch-panel--dim]="dim()">
+      <div class="min-w-0 flex-1">
+        <h3 class="font-display font-semibold text-lg text-stitch-on-surface flex items-center gap-2">
+          <app-stitch-icon name="sparkles" size="xs" class="text-stitch-on-surface-variant" />
+          {{ config().name || config().id }}
+        </h3>
+        <p class="text-xs font-mono text-stitch-on-surface-variant mt-2">
+          {{ config().method }}
+          @if (config().method !== 'static_ip' && config().region) {
+            <span> · {{ config().region }}</span>
+          }
+        </p>
+        @if (config().method === 'aws_tag') {
+          @let pairs = tagPairsForCard(config());
+          @if (pairs.length) {
+            <div class="mt-3 flex flex-wrap gap-1.5">
+              @for (p of pairs; track $index) {
+                <span class="inline-flex items-center rounded-sm border border-stitch-ghost bg-stitch-surface-lowest px-2 py-0.5 text-[11px] font-mono text-stitch-on-surface"
+                  >{{ p.key }}={{ p.value }}</span
+                >
+              }
+            </div>
+          }
+        }
+        @if (config().method === 'static_ip') {
+          @let prev = addressesPreview(config());
+          @if (prev) {
+            <p class="text-xs font-mono text-stitch-on-surface mt-3 break-all">
+              {{ prev.preview.join(', ') }}
+              @if (prev.more > 0) {
+                <span class="text-stitch-on-surface-variant"> · +{{ prev.more }} more</span>
+              }
+            </p>
+          }
+        }
+        @if (config().method !== 'aws_tag' && config().tag_key) {
+          <p class="text-xs mt-3 font-mono text-stitch-on-surface">tag: {{ config().tag_key }}={{ config().tag_value }}</p>
+        }
+        <p class="text-xs mt-3">
+          <span class="stitch-status-chip">{{ config().enabled !== false ? 'enabled' : 'disabled' }}</span>
+        </p>
+        <p class="text-xs mt-3 text-stitch-on-surface-variant font-mono">snapshots: {{ config().snapshot_scope || 'node' }}</p>
+      </div>
+      <div class="flex flex-wrap gap-3">
+        <button
+          type="button"
+          class="btn-stitch-secondary btn-stitch-secondary--sm stitch-icon-btn"
+          (click)="runRequested.emit(config())"
+          [disabled]="running()"
+        >
+          @if (running()) {
+            <span class="loading loading-spinner loading-xs"></span>
+          } @else {
+            <app-stitch-icon name="play" size="xs" />
+            Run
+          }
+        </button>
+        <button type="button" class="btn-stitch-secondary btn-stitch-secondary--sm stitch-icon-btn" (click)="editRequested.emit(config())">
+          <app-stitch-icon name="edit" size="xs" />
+          Edit
+        </button>
+        <button
+          type="button"
+          class="btn-stitch-secondary btn-stitch-secondary--sm text-stitch-error stitch-icon-btn"
+          (click)="deleteRequested.emit(config())"
+        >
+          <app-stitch-icon name="trash" size="xs" />
+          Delete
+        </button>
+      </div>
+    </div>
+  `
+})
+export class DiscoveryRuleCardComponent {
+  readonly config = input.required<DiscoveryConfigV1>();
+  readonly dim = input.required<boolean>();
+  readonly running = input(false);
+
+  readonly runRequested = output<DiscoveryConfigV1>();
+  readonly editRequested = output<DiscoveryConfigV1>();
+  readonly deleteRequested = output<DiscoveryConfigV1>();
+
+  tagPairsForCard(config: DiscoveryConfigV1): DiscoveryTagPairV1[] {
+    const params = config.parameters as DiscoveryParametersV1 | undefined;
+    const raw = params?.tags;
+    if (Array.isArray(raw) && raw.length > 0) {
+      const out: DiscoveryTagPairV1[] = [];
+      for (const tag of raw) {
+        if (isRecord(tag) && 'key' in tag) {
+          const key = String(tag['key'] ?? '').trim();
+          if (key.length > 0) {
+            out.push({ key, value: String(tag['value'] ?? '') });
+          }
+        }
+      }
+      if (out.length > 0) {
+        return out;
+      }
+    }
+    if (config.tag_key != null && String(config.tag_key).trim() !== '') {
+      return [{ key: config.tag_key, value: config.tag_value ?? '' }];
+    }
+    return [];
+  }
+
+  addressesPreview(config: DiscoveryConfigV1): { preview: string[]; more: number } | null {
+    if (config.method !== 'static_ip') {
+      return null;
+    }
+    const raw = config.parameters?.addresses;
+    if (!Array.isArray(raw) || raw.length === 0) {
+      return null;
+    }
+    const strings = raw.map(address => String(address)).filter(address => address.length > 0);
+    if (strings.length === 0) {
+      return null;
+    }
+    const max = 3;
+    return {
+      preview: strings.slice(0, max),
+      more: Math.max(0, strings.length - max)
+    };
+  }
+}
+
+@Component({
   selector: 'app-discovery-page',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, StitchIconComponent, DiscoveryRuleFormModalComponent],
+  imports: [ReactiveFormsModule, StitchIconComponent, DiscoveryRuleFormModalComponent, DiscoveryRuleCardComponent],
   template: `
     <div class="px-10 py-12 max-w-6xl mx-auto">
       <header class="mb-10 flex flex-wrap items-start justify-between gap-6">
@@ -138,89 +280,14 @@ function parseAddressesText(d: DiscoveryConfigV1): string {
           } @else {
             <div class="space-y-4">
               @for (d of configs(); track d.id; let i = $index) {
-                <div
-                  class="stitch-panel flex flex-wrap items-start justify-between gap-6"
-                  [class.stitch-panel--dim]="i % 2 === 0"
-                >
-                  <div class="min-w-0 flex-1">
-                    <h3 class="font-display font-semibold text-lg text-stitch-on-surface flex items-center gap-2">
-                      <app-stitch-icon name="sparkles" size="xs" class="text-stitch-on-surface-variant" />
-                      {{ d.name || d.id }}
-                    </h3>
-                    <p class="text-xs font-mono text-stitch-on-surface-variant mt-2">
-                      {{ d.method }}
-                      @if (d.method !== 'static_ip' && d.region) {
-                        <span> · {{ d.region }}</span>
-                      }
-                    </p>
-                    @if (d.method === 'aws_tag') {
-                      @let pairs = tagPairsForCard(d);
-                      @if (pairs.length) {
-                        <div class="mt-3 flex flex-wrap gap-1.5">
-                          @for (p of pairs; track $index) {
-                            <span
-                              class="inline-flex items-center rounded-sm border border-stitch-ghost bg-stitch-surface-lowest px-2 py-0.5 text-[11px] font-mono text-stitch-on-surface"
-                              >{{ p.key }}={{ p.value }}</span
-                            >
-                          }
-                        </div>
-                      }
-                    }
-                    @if (d.method === 'static_ip') {
-                      @let prev = addressesPreview(d);
-                      @if (prev) {
-                        <p class="text-xs font-mono text-stitch-on-surface mt-3 break-all">
-                          {{ prev.preview.join(', ') }}
-                          @if (prev.more > 0) {
-                            <span class="text-stitch-on-surface-variant"> · +{{ prev.more }} more</span>
-                          }
-                        </p>
-                      }
-                    }
-                    @if (d.method !== 'aws_tag' && d.tag_key) {
-                      <p class="text-xs mt-3 font-mono text-stitch-on-surface">
-                        tag: {{ d.tag_key }}={{ d.tag_value }}
-                      </p>
-                    }
-                    <p class="text-xs mt-3">
-                      <span class="stitch-status-chip">{{ d.enabled !== false ? 'enabled' : 'disabled' }}</span>
-                    </p>
-                    <p class="text-xs mt-3 text-stitch-on-surface-variant font-mono">
-                      snapshots: {{ d.snapshot_scope || 'node' }}
-                    </p>
-                  </div>
-                  <div class="flex flex-wrap gap-3">
-                    <button
-                      type="button"
-                      class="btn-stitch-secondary btn-stitch-secondary--sm stitch-icon-btn"
-                      (click)="run(d)"
-                      [disabled]="runningId() === d.id"
-                    >
-                      @if (runningId() === d.id) {
-                        <span class="loading loading-spinner loading-xs"></span>
-                      } @else {
-                        <app-stitch-icon name="play" size="xs" />
-                        Run
-                      }
-                    </button>
-                    <button
-                      type="button"
-                      class="btn-stitch-secondary btn-stitch-secondary--sm stitch-icon-btn"
-                      (click)="edit(d)"
-                    >
-                      <app-stitch-icon name="edit" size="xs" />
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      class="btn-stitch-secondary btn-stitch-secondary--sm text-stitch-error stitch-icon-btn"
-                      (click)="remove(d)"
-                    >
-                      <app-stitch-icon name="trash" size="xs" />
-                      Delete
-                    </button>
-                  </div>
-                </div>
+                <app-discovery-rule-card
+                  [config]="d"
+                  [dim]="i % 2 === 0"
+                  [running]="runningId() === d.id"
+                  (runRequested)="run($event)"
+                  (editRequested)="edit($event)"
+                  (deleteRequested)="remove($event)"
+                />
               } @empty {
                 <div class="stitch-panel stitch-panel--dim text-center py-14 px-6">
                   <app-stitch-icon name="discovery" size="lg" class="mx-auto text-stitch-on-surface-variant mb-4" />
@@ -308,8 +375,7 @@ export class DiscoveryPageComponent {
   ];
 
   private readonly refreshVersion = signal(0);
-  private readonly optimisticConfigsById = signal<Record<string, DiscoveryConfigV1>>({});
-  private readonly pendingSnapshotScopeById = signal<Record<string, SnapshotScopeV1>>({});
+  private readonly optimisticConfigsById = signal<Record<string, OptimisticDiscoveryEntry>>({});
   readonly actionError = signal<string | null>(null);
   readonly configsResource = rxResource({
     stream: () => {
@@ -319,29 +385,25 @@ export class DiscoveryPageComponent {
   });
   readonly configs = computed(() => {
     const rows = normalizeDiscoveryRows(this.configsResource.value() as unknown);
+    const now = Date.now();
     const optimisticById = this.optimisticConfigsById();
-    const pending = this.pendingSnapshotScopeById();
     const merged: DiscoveryConfigV1[] = rows.map(row => {
       const id = row.id ?? '';
       const optimistic = id ? optimisticById[id] : undefined;
-      return optimistic ? { ...row, ...optimistic, id } : row;
+      if (!optimistic || optimistic.expiresAt <= now) {
+        return row;
+      }
+      return { ...row, ...optimistic.config, id };
     });
     if (Object.keys(optimisticById).length > 0) {
       const knownIds = new Set(merged.map(row => row.id ?? '').filter(id => id.length > 0));
-      for (const [id, cfg] of Object.entries(optimisticById)) {
-        if (!knownIds.has(id)) {
-          merged.push(cfg);
+      for (const [id, optimistic] of Object.entries(optimisticById)) {
+        if (!knownIds.has(id) && optimistic.expiresAt > now) {
+          merged.push(optimistic.config);
         }
       }
     }
-    if (Object.keys(pending).length === 0) {
-      return merged;
-    }
-    return merged.map(row => {
-      const id = row.id ?? '';
-      const forcedScope = id ? pending[id] : undefined;
-      return forcedScope ? { ...row, snapshot_scope: forcedScope } : row;
-    });
+    return merged;
   });
   readonly loading = computed(() => this.configsResource.isLoading());
   readonly error = computed(() => {
@@ -385,51 +447,9 @@ export class DiscoveryPageComponent {
     };
   }
 
-  tagPairsForCard(d: DiscoveryConfigV1): DiscoveryTagPairV1[] {
-    const params = d.parameters as DiscoveryParametersV1 | undefined;
-    const raw = params?.tags;
-    if (Array.isArray(raw) && raw.length > 0) {
-      const out: DiscoveryTagPairV1[] = [];
-      for (const t of raw) {
-        if (t && typeof t === 'object' && 'key' in t) {
-          const o = t as unknown as Record<string, unknown>;
-          const key = String(o['key'] ?? '').trim();
-          if (key.length > 0) {
-            out.push({ key, value: String(o['value'] ?? '') });
-          }
-        }
-      }
-      if (out.length > 0) {
-        return out;
-      }
-    }
-    if (d.tag_key != null && String(d.tag_key).trim() !== '') {
-      return [{ key: d.tag_key, value: d.tag_value ?? '' }];
-    }
-    return [];
-  }
-
-  addressesPreview(d: DiscoveryConfigV1): { preview: string[]; more: number } | null {
-    if (d.method !== 'static_ip') {
-      return null;
-    }
-    const raw = d.parameters?.addresses;
-    if (!Array.isArray(raw) || raw.length === 0) {
-      return null;
-    }
-    const strings = raw.map(a => String(a)).filter(s => s.length > 0);
-    if (strings.length === 0) {
-      return null;
-    }
-    const max = 3;
-    return {
-      preview: strings.slice(0, max),
-      more: Math.max(0, strings.length - max)
-    };
-  }
-
   load(): void {
     this.actionError.set(null);
+    this.pruneExpiredOptimisticEntries();
     this.refreshVersion.update(v => v + 1);
   }
 
@@ -550,10 +570,11 @@ export class DiscoveryPageComponent {
           };
           this.optimisticConfigsById.update(current => ({
             ...current,
-            [savedId]: optimisticRow
+            [savedId]: {
+              config: optimisticRow,
+              expiresAt: Date.now() + OPTIMISTIC_DISCOVERY_TTL_MS
+            }
           }));
-          const scope = body.snapshot_scope === 'group' ? 'group' : 'node';
-          this.pendingSnapshotScopeById.update(current => ({ ...current, [savedId]: scope }));
         }
         this.saving.set(false);
         this.showModal.set(false);
@@ -581,7 +602,14 @@ export class DiscoveryPageComponent {
       return;
     }
     this.api.deleteDiscovery(d.id).subscribe({
-      next: () => this.load(),
+      next: () => {
+        this.optimisticConfigsById.update(current => {
+          const next = { ...current };
+          delete next[d.id as string];
+          return next;
+        });
+        this.load();
+      },
       error: err => this.actionError.set(extractApiError(err, 'Delete failed'))
     });
   }
@@ -647,5 +675,18 @@ export class DiscoveryPageComponent {
     }
     region.updateValueAndValidity({ emitEvent: false });
     addressesText.updateValueAndValidity({ emitEvent: false });
+  }
+
+  private pruneExpiredOptimisticEntries(): void {
+    const now = Date.now();
+    this.optimisticConfigsById.update(current => {
+      const next: Record<string, OptimisticDiscoveryEntry> = {};
+      for (const [id, entry] of Object.entries(current)) {
+        if (entry.expiresAt > now) {
+          next[id] = entry;
+        }
+      }
+      return next;
+    });
   }
 }

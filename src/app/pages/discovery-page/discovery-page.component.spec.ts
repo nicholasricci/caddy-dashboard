@@ -1,28 +1,9 @@
 import { provideZonelessChangeDetection } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
-import type { DiscoveryConfigV1 } from '../../models/api-v1.model';
 import { DashboardApiService } from '../../services/dashboard-api.service';
 import { ConfirmService } from '../../ui/confirm.service';
 import { DiscoveryPageComponent } from './discovery-page.component';
-
-class DashboardApiServiceMock {
-  listDiscovery() {
-    return of([]);
-  }
-  createDiscovery() {
-    return of({});
-  }
-  updateDiscovery() {
-    return of({});
-  }
-  deleteDiscovery() {
-    return of(void 0);
-  }
-  runDiscovery() {
-    return of({});
-  }
-}
 
 class ConfirmServiceMock {
   ask() {
@@ -33,13 +14,27 @@ class ConfirmServiceMock {
 describe('DiscoveryPageComponent snapshot scope', () => {
   let fixture: ComponentFixture<DiscoveryPageComponent>;
   let component: DiscoveryPageComponent;
+  let api: jasmine.SpyObj<DashboardApiService>;
 
   beforeEach(async () => {
+    api = jasmine.createSpyObj<DashboardApiService>('DashboardApiService', [
+      'listDiscovery',
+      'createDiscovery',
+      'updateDiscovery',
+      'deleteDiscovery',
+      'runDiscovery'
+    ]);
+    api.listDiscovery.and.returnValue(of([]));
+    api.createDiscovery.and.returnValue(of({ id: 'new-rule' }));
+    api.updateDiscovery.and.returnValue(of({ id: 'disc-1' }));
+    api.deleteDiscovery.and.returnValue(of(void 0));
+    api.runDiscovery.and.returnValue(of({}));
+
     await TestBed.configureTestingModule({
       imports: [DiscoveryPageComponent],
       providers: [
         provideZonelessChangeDetection(),
-        { provide: DashboardApiService, useClass: DashboardApiServiceMock },
+        { provide: DashboardApiService, useValue: api },
         { provide: ConfirmService, useClass: ConfirmServiceMock }
       ]
     }).compileComponents();
@@ -55,9 +50,11 @@ describe('DiscoveryPageComponent snapshot scope', () => {
     component.discoveryForm.controls.method.setValue('aws_ssm');
     component.discoveryForm.controls.region.setValue('eu-west-1');
 
-    const payload = (component as unknown as { buildPayloadFromDraft: () => DiscoveryConfigV1 }).buildPayloadFromDraft();
+    component.save();
 
-    expect(payload.snapshot_scope).toBe('node');
+    expect(api.createDiscovery).toHaveBeenCalled();
+    const payload = api.createDiscovery.calls.mostRecent().args[0] as Record<string, unknown>;
+    expect(payload['snapshot_scope']).toBe('node');
   });
 
   it('keeps group snapshot_scope when editing existing rule', () => {
@@ -69,9 +66,13 @@ describe('DiscoveryPageComponent snapshot scope', () => {
       parameters: { addresses: ['10.0.0.5'] },
       enabled: true
     });
+    component.discoveryForm.controls.name.setValue('rule-b-updated');
 
-    const payload = (component as unknown as { buildPayloadFromDraft: () => DiscoveryConfigV1 }).buildPayloadFromDraft();
+    component.save();
 
-    expect(payload.snapshot_scope).toBe('group');
+    expect(api.updateDiscovery).toHaveBeenCalled();
+    const payload = api.updateDiscovery.calls.mostRecent().args[1] as Record<string, unknown>;
+    expect(payload['snapshot_scope']).toBe('group');
+    expect(payload['name']).toBe('rule-b-updated');
   });
 });

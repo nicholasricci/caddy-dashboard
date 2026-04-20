@@ -68,17 +68,23 @@ type DiscoveryRuleForm = FormGroup<{
 
             <fieldset class="border-0 p-0 m-0 min-w-0">
               <legend class="text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium mb-3">Discovery method</legend>
-              <div class="grid gap-3 sm:grid-cols-3" role="group" aria-label="Discovery method">
+              <div class="grid gap-3 sm:grid-cols-3" role="radiogroup" aria-label="Discovery method">
                 @for (opt of methodChoices(); track opt.id) {
-                  <button
-                    type="button"
+                  <label
                     class="stitch-panel text-left p-4 transition-colors border-stitch-ghost hover:bg-stitch-surface-low"
                     [class.ring-2]="currentMethod() === opt.id"
                     [class.ring-stitch-primary]="currentMethod() === opt.id"
                     [class.bg-stitch-surface-low]="currentMethod() === opt.id"
-                    [attr.aria-pressed]="currentMethod() === opt.id"
-                    (click)="methodChanged.emit(opt.id)"
+                    [attr.aria-checked]="currentMethod() === opt.id"
+                    role="radio"
                   >
+                    <input
+                      class="sr-only"
+                      type="radio"
+                      name="discovery-method"
+                      [checked]="currentMethod() === opt.id"
+                      (change)="methodChanged.emit(opt.id)"
+                    />
                     <span class="flex items-start gap-2">
                       <app-stitch-icon [name]="$any(opt.icon)" size="sm" class="text-stitch-primary-fixed shrink-0 mt-0.5" />
                       <span class="min-w-0">
@@ -86,38 +92,50 @@ type DiscoveryRuleForm = FormGroup<{
                         <span class="block text-xs text-stitch-on-surface-variant mt-1 leading-snug">{{ opt.description }}</span>
                       </span>
                     </span>
-                  </button>
+                  </label>
                 }
               </div>
             </fieldset>
 
             <fieldset class="border-0 p-0 m-0 min-w-0">
               <legend class="text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium mb-3">Snapshot scope</legend>
-              <div class="grid gap-3 sm:grid-cols-2" role="group" aria-label="Snapshot scope">
-                <button
-                  type="button"
+              <div class="grid gap-3 sm:grid-cols-2" role="radiogroup" aria-label="Snapshot scope">
+                <label
                   class="stitch-panel text-left p-4 transition-colors border-stitch-ghost hover:bg-stitch-surface-low"
                   [class.ring-2]="currentSnapshotScope() === 'node'"
                   [class.ring-stitch-primary]="currentSnapshotScope() === 'node'"
                   [class.bg-stitch-surface-low]="currentSnapshotScope() === 'node'"
-                  [attr.aria-pressed]="currentSnapshotScope() === 'node'"
-                  (click)="snapshotScopeChanged.emit('node')"
+                  [attr.aria-checked]="currentSnapshotScope() === 'node'"
+                  role="radio"
                 >
+                  <input
+                    class="sr-only"
+                    type="radio"
+                    name="discovery-snapshot-scope"
+                    [checked]="currentSnapshotScope() === 'node'"
+                    (change)="snapshotScopeChanged.emit('node')"
+                  />
                   <span class="block font-display font-semibold text-sm text-stitch-on-surface">Node</span>
                   <span class="block text-xs text-stitch-on-surface-variant mt-1 leading-snug">Store and load snapshots per node.</span>
-                </button>
-                <button
-                  type="button"
+                </label>
+                <label
                   class="stitch-panel text-left p-4 transition-colors border-stitch-ghost hover:bg-stitch-surface-low"
                   [class.ring-2]="currentSnapshotScope() === 'group'"
                   [class.ring-stitch-primary]="currentSnapshotScope() === 'group'"
                   [class.bg-stitch-surface-low]="currentSnapshotScope() === 'group'"
-                  [attr.aria-pressed]="currentSnapshotScope() === 'group'"
-                  (click)="snapshotScopeChanged.emit('group')"
+                  [attr.aria-checked]="currentSnapshotScope() === 'group'"
+                  role="radio"
                 >
+                  <input
+                    class="sr-only"
+                    type="radio"
+                    name="discovery-snapshot-scope"
+                    [checked]="currentSnapshotScope() === 'group'"
+                    (change)="snapshotScopeChanged.emit('group')"
+                  />
                   <span class="block font-display font-semibold text-sm text-stitch-on-surface">Group</span>
                   <span class="block text-xs text-stitch-on-surface-variant mt-1 leading-snug">Share snapshots across nodes discovered by this rule.</span>
-                </button>
+                </label>
               </div>
             </fieldset>
 
