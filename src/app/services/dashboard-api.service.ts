@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import {
-  AuditLogEntryV1,
+  AuditLogListResultV1,
   ApplyConfigRequestV1,
   CaddyConfigHostsResponseV1,
   CaddyConfigIdsResponseV1,
@@ -124,7 +124,7 @@ export class DashboardApiService {
     return this.discovery.runDiscovery(id);
   }
 
-  listAuditLogs(): Observable<AuditLogEntryV1[]> {
+  listAuditLogs(): Observable<AuditLogListResultV1> {
     return this.audit.listAuditLogs();
   }
 

@@ -58,11 +58,27 @@ export interface AuditLogEntryV1 {
   id?: string;
   action?: string;
   actor?: string;
+  resource?: string;
+  resource_id?: string;
+  payload?: Record<string, unknown> | string | null;
   target?: string;
   details?: Record<string, unknown> | string;
   created_at?: string;
   [key: string]: unknown;
 }
+
+export interface AuditLogListMetaV1 {
+  total?: number;
+  limit?: number;
+  offset?: number;
+}
+
+export interface AuditLogListResponseV1 {
+  items?: AuditLogEntryV1[];
+  meta?: AuditLogListMetaV1;
+}
+
+export type AuditLogListResultV1 = AuditLogEntryV1[] | AuditLogListResponseV1;
 
 export interface LoginRequestV1 {
   username: string;

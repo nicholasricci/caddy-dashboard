@@ -138,7 +138,7 @@ describe('DashboardApiService', () => {
   it('listAuditLogs GETs /audit', done => {
     service.listAuditLogs().subscribe({
       next: rows => {
-        expect(rows.length).toBe(1);
+        expect(Array.isArray(rows) ? rows.length : rows.items?.length).toBe(1);
         done();
       },
       error: done.fail

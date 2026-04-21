@@ -1,12 +1,28 @@
 import { ChangeDetectionStrategy, Component, computed, inject, OnInit, signal } from '@angular/core';
 
 import { rxResource } from '@angular/core/rxjs-interop';
-import type { AuditLogEntryV1 } from '../../models/api-v1.model';
+import type { AuditLogEntryV1, AuditLogListMetaV1, AuditLogListResultV1 } from '../../models/api-v1.model';
 import { DashboardApiService } from '../../services/dashboard-api.service';
 import { StitchIconComponent } from '../../ui/stitch-icon.component';
 import { extractApiError } from '../../core/http-error.util';
 
-function toAuditEntries(rows: unknown): AuditLogEntryV1[] {
+interface AuditRowViewModel {
+  id: string;
+  timestamp: string;
+  actor: string;
+  action: string;
+  resource: string;
+  resourceId: string;
+  summary: string;
+  payloadText: string | null;
+}
+
+const timestampFormatter = new Intl.DateTimeFormat(undefined, {
+  dateStyle: 'short',
+  timeStyle: 'medium'
+});
+
+function toAuditEntries(rows: AuditLogListResultV1 | unknown): AuditLogEntryV1[] {
   if (Array.isArray(rows)) {
     return rows as AuditLogEntryV1[];
   }
@@ -19,6 +35,108 @@ function toAuditEntries(rows: unknown): AuditLogEntryV1[] {
     return record['items'] as AuditLogEntryV1[];
   }
   return [];
+}
+
+function toAuditMeta(rows: AuditLogListResultV1 | unknown): AuditLogListMetaV1 | null {
+  if (!rows || typeof rows !== 'object' || Array.isArray(rows)) {
+    return null;
+  }
+
+  const meta = (rows as Record<string, unknown>)['meta'];
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
+    return null;
+  }
+
+  return meta as AuditLogListMetaV1;
+}
+
+function toRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function displayText(value: unknown, fallback = '-'): string {
+  if (typeof value === 'string') {
+    return value.trim() || fallback;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return fallback;
+}
+
+function formatTimestamp(raw: unknown): string {
+  if (typeof raw !== 'string' || !raw) {
+    return '-';
+  }
+
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? raw : timestampFormatter.format(date);
+}
+
+function formatPayloadText(value: unknown): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === 'string') {
+    return value.trim() || null;
+  }
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function summarizeEntry(entry: AuditLogEntryV1, payload: Record<string, unknown> | null): string {
+  if (typeof entry['details'] === 'string' && entry['details'].trim()) {
+    return entry['details'].trim();
+  }
+
+  const parts: string[] = [];
+  const pushIfPresent = (label: string, value: unknown): void => {
+    if (typeof value === 'string' && value.trim()) {
+      parts.push(`${label}: ${value}`);
+      return;
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      parts.push(`${label}: ${value}`);
+    }
+  };
+
+  if (payload) {
+    pushIfPresent('name', payload['name']);
+    pushIfPresent('method', payload['method']);
+    pushIfPresent('region', payload['region']);
+    pushIfPresent('scope', payload['snapshot_scope']);
+    if (typeof payload['enabled'] === 'boolean') {
+      parts.push(payload['enabled'] ? 'enabled' : 'disabled');
+    }
+    if (typeof payload['discovered_nodes'] === 'number') {
+      const count = payload['discovered_nodes'];
+      parts.push(`discovered nodes: ${count}`);
+    }
+  }
+
+  return parts.join(' · ') || '-';
+}
+
+function toAuditRow(entry: AuditLogEntryV1, index: number): AuditRowViewModel {
+  const payload = toRecord(entry['payload'] ?? entry['details']);
+  const payloadText = formatPayloadText(entry['payload'] ?? entry['details']);
+
+  return {
+    id: `${entry['id'] ?? entry['created_at'] ?? 'entry'}-${index}`,
+    timestamp: formatTimestamp(entry['created_at'] ?? entry['timestamp']),
+    actor: displayText(entry['actor']),
+    action: displayText(entry['action']),
+    resource: displayText(entry['resource'] ?? entry['target']),
+    resourceId: displayText(entry['resource_id']),
+    summary: summarizeEntry(entry, payload),
+    payloadText
+  };
 }
 
 @Component({
@@ -37,6 +155,9 @@ function toAuditEntries(rows: unknown): AuditLogEntryV1[] {
           <p class="text-sm text-stitch-on-surface-variant mt-3 leading-relaxed">
             Recent administrative actions and system events.
           </p>
+          @if (metaSummary(); as summary) {
+            <p class="text-xs text-stitch-on-surface-variant mt-2">{{ summary }}</p>
+          }
         </div>
         <button
           type="button"
@@ -72,19 +193,32 @@ function toAuditEntries(rows: unknown): AuditLogEntryV1[] {
                 <th>Timestamp</th>
                 <th>Actor</th>
                 <th>Action</th>
-                <th>Target</th>
+                <th>Resource</th>
                 <th>Details</th>
               </tr>
             </thead>
             <tbody>
-              @for (row of entries(); track trackByEntry($index, row)) {
+              @for (row of rows(); track row.id) {
                 <tr>
-                  <td>{{ formatTimestamp(row) }}</td>
-                  <td>{{ stringify(row['actor']) }}</td>
-                  <td>{{ stringify(row['action']) }}</td>
-                  <td>{{ stringify(row['target']) }}</td>
-                  <td class="max-w-[340px] truncate" [title]="stringify(row['details'])">
-                    {{ stringify(row['details']) }}
+                  <td class="whitespace-nowrap align-top">{{ row.timestamp }}</td>
+                  <td class="align-top">{{ row.actor }}</td>
+                  <td class="align-top">
+                    <span class="stitch-status-chip">{{ row.action }}</span>
+                  </td>
+                  <td class="align-top min-w-52">
+                    <div class="font-medium text-stitch-on-surface">{{ row.resource }}</div>
+                    <div class="mt-1 text-xs font-mono text-stitch-on-surface-variant break-all">
+                      {{ row.resourceId }}
+                    </div>
+                  </td>
+                  <td class="align-top min-w-80 max-w-[34rem]">
+                    <div class="text-sm text-stitch-on-surface break-words">{{ row.summary }}</div>
+                    @if (row.payloadText) {
+                      <details class="mt-2">
+                        <summary class="cursor-pointer text-xs text-stitch-primary select-none">Payload JSON</summary>
+                        <pre class="mt-2 overflow-auto rounded-sm bg-stitch-surface-lowest p-3 text-[11px] leading-5 text-stitch-on-surface whitespace-pre-wrap break-all border border-stitch-ghost">{{ row.payloadText }}</pre>
+                      </details>
+                    }
                   </td>
                 </tr>
               }
@@ -110,7 +244,23 @@ export class AuditPageComponent implements OnInit {
     const e = this.entriesResource.error();
     return e ? extractApiError(e, 'Could not load audit logs') : null;
   });
-  readonly entries = computed(() => toAuditEntries(this.entriesResource.value() as unknown));
+  readonly entries = computed(() => toAuditEntries(this.entriesResource.value() as AuditLogListResultV1 | unknown));
+  readonly rows = computed(() => this.entries().map((entry, index) => toAuditRow(entry, index)));
+  readonly meta = computed(() => toAuditMeta(this.entriesResource.value() as AuditLogListResultV1 | unknown));
+  readonly metaSummary = computed(() => {
+    const meta = this.meta();
+    if (!meta || typeof meta['total'] !== 'number') {
+      return null;
+    }
+
+    const total = meta['total'];
+    const visible = this.entries().length;
+    if (visible === total) {
+      return `${total} entr${total === 1 ? 'y' : 'ies'} loaded`;
+    }
+
+    return `Showing ${visible} of ${total} entries`;
+  });
 
   ngOnInit(): void {
     this.load();
@@ -118,29 +268,5 @@ export class AuditPageComponent implements OnInit {
 
   load(): void {
     this.refreshVersion.update(v => v + 1);
-  }
-
-  trackByEntry(index: number, row: AuditLogEntryV1): string {
-    const id = row['id'];
-    const createdAt = row['created_at'];
-    return `${id ?? createdAt ?? 'entry'}-${index}`;
-  }
-
-  stringify(value: unknown): string {
-    if (value === null || value === undefined) {
-      return '-';
-    }
-    if (typeof value === 'string') {
-      return value || '-';
-    }
-    return JSON.stringify(value);
-  }
-
-  formatTimestamp(entry: AuditLogEntryV1): string {
-    const raw = entry['created_at'] ?? entry['timestamp'];
-    if (typeof raw !== 'string' || !raw) {
-      return '-';
-    }
-    return raw;
   }
 }

@@ -28,13 +28,34 @@ describe('AuditPageComponent', () => {
 
     const req = httpMock.expectOne(`${apiBase}/audit`);
     expect(req.request.method).toBe('GET');
-    req.flush([{ id: 'a1', actor: 'admin', action: 'user.create', target: 'user/bob' }]);
+    req.flush({
+      items: [
+        {
+          id: 'a1',
+          actor: 'admin',
+          action: 'update',
+          resource: 'discovery',
+          resource_id: 'disc-1',
+          payload: {
+            name: 'eu-south-1-Project-Caddy (MAIN)',
+            region: 'eu-south-1',
+            snapshot_scope: 'group',
+            enabled: true
+          },
+          created_at: '2026-04-20T11:23:17.851+02:00'
+        }
+      ],
+      meta: { total: 1, limit: 20, offset: 0 }
+    });
     await fixture.whenStable();
     fixture.detectChanges();
 
     const root = fixture.nativeElement as HTMLElement;
     expect(root.textContent).toContain('Audit log');
-    expect(root.textContent).toContain('user.create');
+    expect(root.textContent).toContain('discovery');
     expect(root.textContent).toContain('admin');
+    expect(root.textContent).toContain('disc-1');
+    expect(root.textContent).toContain('eu-south-1-Project-Caddy (MAIN)');
+    expect(root.textContent).toContain('Payload JSON');
   });
 });
