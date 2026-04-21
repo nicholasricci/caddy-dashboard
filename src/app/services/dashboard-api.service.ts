@@ -3,6 +3,9 @@ import { Observable } from 'rxjs';
 import {
   AuditLogEntryV1,
   ApplyConfigRequestV1,
+  CaddyConfigHostsResponseV1,
+  CaddyConfigIdsResponseV1,
+  CaddyConfigUpstreamsResponseV1,
   CaddyNodeV1,
   CreateUserRequestV1,
   DiscoveryConfigV1,
@@ -67,6 +70,22 @@ export class DashboardApiService {
 
   getLiveNodeConfig(id: string): Observable<unknown> {
     return this.nodes.getLiveNodeConfig(id);
+  }
+
+  listLiveConfigIds(id: string): Observable<CaddyConfigIdsResponseV1> {
+    return this.nodes.listLiveConfigIds(id);
+  }
+
+  getLiveConfigById(id: string, configId: string): Observable<Record<string, unknown>> {
+    return this.nodes.getLiveConfigById(id, configId);
+  }
+
+  getLiveConfigUpstreams(id: string, configId: string): Observable<CaddyConfigUpstreamsResponseV1> {
+    return this.nodes.getLiveConfigUpstreams(id, configId);
+  }
+
+  getLiveConfigHosts(id: string, configId: string): Observable<CaddyConfigHostsResponseV1> {
+    return this.nodes.getLiveConfigHosts(id, configId);
   }
 
   syncConfig(id: string): Observable<Record<string, unknown>> {

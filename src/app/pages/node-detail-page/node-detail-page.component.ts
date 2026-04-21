@@ -22,6 +22,7 @@ import { StitchIconComponent } from '../../ui/stitch-icon.component';
 import { NodeConfigEditorComponent } from './node-config-editor.component';
 import { ConfigEditStore } from './visual-editor/config-edit.store';
 import { VisualConfigEditorComponent } from './visual-editor/visual-config-editor.component';
+import { LiveConfigIdDialogComponent } from './live-config-id-dialog.component';
 import {
   extractCaddyConfigFromSyncResponse,
   extractConfigFromSnapshotRecord,
@@ -50,7 +51,14 @@ function normalizeSnapshots(rows: unknown): Record<string, unknown>[] {
   selector: 'app-node-detail-page',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterModule, FormsModule, StitchIconComponent, NodeConfigEditorComponent, VisualConfigEditorComponent],
+  imports: [
+    RouterModule,
+    FormsModule,
+    StitchIconComponent,
+    NodeConfigEditorComponent,
+    VisualConfigEditorComponent,
+    LiveConfigIdDialogComponent
+  ],
   providers: [ConfigEditStore],
   host: {
     class: 'flex w-full flex-1 min-h-0 flex-col'
@@ -106,6 +114,15 @@ function normalizeSnapshots(rows: unknown): Record<string, unknown>[] {
             >
               <app-stitch-icon name="apply" size="xs" />
               Apply config
+            </button>
+            <button
+              type="button"
+              class="btn-stitch-secondary btn-stitch-secondary--sm stitch-icon-btn"
+              (click)="openLiveConfigIdDialog()"
+              [disabled]="busy()"
+            >
+              <app-stitch-icon name="circleStack" size="xs" />
+              Explore @id
             </button>
             <button type="button" class="btn-stitch-secondary btn-stitch-secondary--sm hidden" (click)="toggleViewMode()">
               {{ viewMode() === 'json' ? 'Visual mode' : 'JSON mode' }}
@@ -347,6 +364,13 @@ function normalizeSnapshots(rows: unknown): Record<string, unknown>[] {
           </div>
         </div>
       }
+
+      <app-live-config-id-dialog
+        [open]="liveConfigIdDialogOpen()"
+        [nodeId]="nodeId"
+        [nodeName]="node()?.name || ''"
+        (closeRequested)="closeLiveConfigIdDialog()"
+      />
     </div>
   `
 })
@@ -379,6 +403,7 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
   readonly confirmDescription = signal('');
   readonly diffOpen = signal(false);
   readonly diffFooterError = signal<string | null>(null);
+  readonly liveConfigIdDialogOpen = signal(false);
 
   private monacoEditor: editor.IStandaloneCodeEditor | null = null;
   private monacoNs: typeof import('monaco-editor') | null = null;
@@ -530,6 +555,14 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
       'Opens a read-only side-by-side diff: snapshot on the left, current editor buffer on the right (not re-fetched from the node). The editor must contain valid JSON.',
       () => this.runOpenDiffAfterConfirm(s)
     );
+  }
+
+  openLiveConfigIdDialog(): void {
+    this.liveConfigIdDialogOpen.set(true);
+  }
+
+  closeLiveConfigIdDialog(): void {
+    this.liveConfigIdDialogOpen.set(false);
   }
 
   toggleViewMode(): void {

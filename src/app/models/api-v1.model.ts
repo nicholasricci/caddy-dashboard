@@ -80,6 +80,32 @@ export interface ApplyConfigRequestV1 {
   config: Record<string, unknown>;
 }
 
+export interface CaddyConfigIdInfoV1 {
+  id?: string;
+  has_upstreams?: boolean;
+  upstream_count?: number;
+  upstreams?: unknown[];
+  host_count?: number;
+  hosts?: string[];
+}
+
+export interface CaddyConfigIdsResponseV1 {
+  items?: CaddyConfigIdInfoV1[];
+}
+
+export interface CaddyConfigUpstreamsResponseV1 {
+  id?: string;
+  has_upstreams?: boolean;
+  upstream_count?: number;
+  upstreams?: unknown[];
+}
+
+export interface CaddyConfigHostsResponseV1 {
+  id?: string;
+  host_count?: number;
+  hosts?: string[];
+}
+
 export interface CreateUserRequestV1 {
   username: string;
   password: string;

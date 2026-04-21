@@ -8,6 +8,7 @@ import { DashboardApiService } from '../../services/dashboard-api.service';
 import { StitchIconComponent } from '../../ui/stitch-icon.component';
 import { ConfirmService } from '../../ui/confirm.service';
 import type { CaddyNodeV1, DiscoveryConfigV1 } from '../../models/api-v1.model';
+import { LiveConfigIdDialogComponent } from '../node-detail-page/live-config-id-dialog.component';
 import {
   buildDiscoveryGroups,
   defaultNodeCreateDraft,
@@ -57,7 +58,7 @@ function normalizeDiscoveryRows(rows: unknown): DiscoveryConfigV1[] {
   selector: 'app-nodes-page',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterModule, ReactiveFormsModule, StitchIconComponent],
+  imports: [RouterModule, ReactiveFormsModule, StitchIconComponent, LiveConfigIdDialogComponent],
   template: `
     <div class="px-10 py-12 max-w-7xl mx-auto">
       <header class="mb-12 flex flex-wrap items-start justify-between gap-6">
@@ -215,6 +216,15 @@ function normalizeDiscoveryRows(rows: unknown): DiscoveryConfigV1[] {
                             </a>
                             <button
                               type="button"
+                              class="text-sm text-stitch-on-surface-variant hover:text-stitch-on-surface mr-3 inline-flex items-center gap-1"
+                              (click)="openLiveConfigIdDialog(n)"
+                              [disabled]="!n.id"
+                            >
+                              <app-stitch-icon name="circleStack" size="xs" />
+                              Explore @id
+                            </button>
+                            <button
+                              type="button"
                               class="text-sm text-stitch-error hover:underline inline-flex items-center gap-1"
                               (click)="remove(n)"
                             >
@@ -342,6 +352,13 @@ function normalizeDiscoveryRows(rows: unknown): DiscoveryConfigV1[] {
           </div>
         </div>
       }
+
+      <app-live-config-id-dialog
+        [open]="liveConfigIdDialogOpen()"
+        [nodeId]="liveConfigIdDialogNodeId()"
+        [nodeName]="liveConfigIdDialogNodeName()"
+        (closeRequested)="closeLiveConfigIdDialog()"
+      />
     </div>
   `
 })
@@ -351,6 +368,9 @@ export class NodesPageComponent {
   private readonly fb = inject(FormBuilder);
 
   readonly showModal = signal(false);
+  readonly liveConfigIdDialogOpen = signal(false);
+  readonly liveConfigIdDialogNodeId = signal('');
+  readonly liveConfigIdDialogNodeName = signal('');
   readonly saving = signal(false);
   readonly actionError = signal<string | null>(null);
   private readonly refreshVersion = signal(0);
@@ -446,6 +466,21 @@ export class NodesPageComponent {
         this.actionError.set(extractApiError(err, 'Create failed'));
       }
     });
+  }
+
+  openLiveConfigIdDialog(n: NodeListItemVm): void {
+    if (!n.id) {
+      return;
+    }
+    this.liveConfigIdDialogNodeId.set(n.id);
+    this.liveConfigIdDialogNodeName.set(n.name || n.id);
+    this.liveConfigIdDialogOpen.set(true);
+  }
+
+  closeLiveConfigIdDialog(): void {
+    this.liveConfigIdDialogOpen.set(false);
+    this.liveConfigIdDialogNodeId.set('');
+    this.liveConfigIdDialogNodeName.set('');
   }
 
   async remove(n: NodeListItemVm): Promise<void> {
