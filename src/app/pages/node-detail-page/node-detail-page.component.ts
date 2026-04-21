@@ -20,6 +20,8 @@ import type { editor } from 'monaco-editor';
 import type { CaddyNodeV1, SnapshotScopeV1 } from '../../models/api-v1.model';
 import { StitchIconComponent } from '../../ui/stitch-icon.component';
 import { NodeConfigEditorComponent } from './node-config-editor.component';
+import { ConfigEditStore } from './visual-editor/config-edit.store';
+import { VisualConfigEditorComponent } from './visual-editor/visual-config-editor.component';
 import {
   extractCaddyConfigFromSyncResponse,
   extractConfigFromSnapshotRecord,
@@ -48,7 +50,8 @@ function normalizeSnapshots(rows: unknown): Record<string, unknown>[] {
   selector: 'app-node-detail-page',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterModule, FormsModule, StitchIconComponent, NodeConfigEditorComponent],
+  imports: [RouterModule, FormsModule, StitchIconComponent, NodeConfigEditorComponent, VisualConfigEditorComponent],
+  providers: [ConfigEditStore],
   host: {
     class: 'flex w-full flex-1 min-h-0 flex-col'
   },
@@ -104,12 +107,35 @@ function normalizeSnapshots(rows: unknown): Record<string, unknown>[] {
               <app-stitch-icon name="apply" size="xs" />
               Apply config
             </button>
+            <button type="button" class="btn-stitch-secondary btn-stitch-secondary--sm hidden" (click)="toggleViewMode()">
+              {{ viewMode() === 'json' ? 'Visual mode' : 'JSON mode' }}
+            </button>
           </div>
         </div>
       </header>
 
       <div class="flex flex-1 min-h-0 w-full overflow-hidden">
-        <app-node-config-editor class="flex-1 min-w-0 min-h-0 h-full" (formatClick)="openFormatConfirm()" (copyClick)="openCopyConfirm()" />
+        <div class="flex-1 min-w-0 min-h-0 h-full relative">
+          @if (viewMode() === 'visual') {
+            @if (visualParseError(); as parseErr) {
+              <div class="m-4 stitch-panel stitch-panel--dim text-sm text-stitch-on-surface-variant">
+                Visual mode is unavailable until JSON is valid: {{ parseErr }}
+              </div>
+            } @else {
+              <app-visual-config-editor
+                class="absolute inset-0 z-10"
+                [store]="configEditStore"
+                (configChanged)="onVisualConfigChanged()"
+              />
+            }
+          }
+          <app-node-config-editor
+            class="absolute inset-0 z-0"
+            [visuallyHidden]="viewMode() === 'visual'"
+            (formatClick)="openFormatConfirm()"
+            (copyClick)="openCopyConfirm()"
+          />
+        </div>
         <aside class="w-[22rem] shrink-0 bg-stitch-surface-dim px-5 py-6 border-l border-stitch-ghost flex flex-col min-h-0">
           @if (node(); as n) {
             <div class="stitch-panel stitch-panel--dim !p-4 shrink-0">
@@ -328,6 +354,7 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
   private readonly api = inject(DashboardApiService);
   private readonly route = inject(ActivatedRoute);
   private readonly injector = inject(Injector);
+  readonly configEditStore = inject(ConfigEditStore);
 
   @ViewChild(NodeConfigEditorComponent) configEditor?: NodeConfigEditorComponent;
   @ViewChild('diffHost') diffHost?: ElementRef<HTMLDivElement>;
@@ -344,6 +371,8 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
   readonly message = signal<string | null>(null);
   readonly err = signal<string | null>(null);
   readonly editorOk = signal(false);
+  readonly viewMode = signal<'json' | 'visual'>('json');
+  readonly visualParseError = signal<string | null>(null);
 
   readonly confirmOpen = signal(false);
   readonly confirmTitle = signal('');
@@ -359,6 +388,7 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
   private diffResizeUnsubscribe: (() => void) | null = null;
 
   private pendingConfirm: (() => void) | null = null;
+  private suppressNextEditorSync = false;
 
   readonly pagedSnapshots = computed(() => {
     const all = this.snapshots();
@@ -502,6 +532,17 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
     );
   }
 
+  toggleViewMode(): void {
+    this.viewMode.update(mode => (mode === 'json' ? 'visual' : 'json'));
+    this.layoutMainEditorSoon();
+  }
+
+  onVisualConfigChanged(): void {
+    this.setEditorValue(this.configEditStore.serialize(), true);
+    this.editorOk.set(true);
+    this.visualParseError.set(null);
+  }
+
   private async initEditor(): Promise<void> {
     const el = this.configEditor?.editorHost?.nativeElement;
     if (!el) {
@@ -520,14 +561,18 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
       fontSize: 13
     });
     const validateJson = (): void => {
-      try {
-        JSON.parse(this.monacoEditor?.getValue() || '');
-        this.editorOk.set(true);
-      } catch {
-        this.editorOk.set(false);
-      }
+      const text = this.monacoEditor?.getValue() || '';
+      const hydrateResult = this.configEditStore.hydrate(text);
+      this.editorOk.set(hydrateResult.ok);
+      this.visualParseError.set(hydrateResult.error);
     };
-    this.monacoEditor.onDidChangeModelContent(validateJson);
+    this.monacoEditor.onDidChangeModelContent(() => {
+      if (this.suppressNextEditorSync) {
+        this.suppressNextEditorSync = false;
+        return;
+      }
+      validateJson();
+    });
     validateJson();
     this.layoutMainEditorSoon();
     if (this.nodeId) {
@@ -544,6 +589,19 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
     });
   }
 
+  private setEditorValue(text: string, keepVisualStoreInSync = false): void {
+    if (!this.monacoEditor) {
+      return;
+    }
+    this.suppressNextEditorSync = true;
+    this.monacoEditor.setValue(text);
+    if (keepVisualStoreInSync) {
+      const result = this.configEditStore.hydrate(text);
+      this.editorOk.set(result.ok);
+      this.visualParseError.set(result.error);
+    }
+  }
+
   private bootstrapLiveConfig(): void {
     this.busy.set(true);
     this.err.set(null);
@@ -554,7 +612,7 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
           this.err.set(null);
           this.editorOk.set(true);
         } else {
-          this.monacoEditor?.setValue(
+          this.setEditorValue(
             '{\n  "_hint": "Live config response was empty or not usable JSON. Try Sync or check the backend."\n}'
           );
           this.err.set('Live config endpoint returned no usable configuration.');
@@ -584,14 +642,14 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
         const parsed = JSON.parse(trimmed) as unknown;
         if (parsed != null && typeof parsed === 'object') {
           if (Array.isArray(parsed)) {
-            this.monacoEditor.setValue(JSON.stringify(parsed, null, 2));
+            this.setEditorValue(JSON.stringify(parsed, null, 2), true);
             return true;
           }
           return this.applyLiveConfigBody(parsed);
         }
         return false;
       } catch {
-        this.monacoEditor.setValue(body);
+        this.setEditorValue(body, true);
         return true;
       }
     }
@@ -605,11 +663,11 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
       if (!toShow || Object.keys(toShow).length === 0) {
         return false;
       }
-      this.monacoEditor.setValue(JSON.stringify(toShow, null, 2));
+      this.setEditorValue(JSON.stringify(toShow, null, 2), true);
       return true;
     }
     if (Array.isArray(body)) {
-      this.monacoEditor.setValue(JSON.stringify(body, null, 2));
+      this.setEditorValue(JSON.stringify(body, null, 2), true);
       return true;
     }
     return false;
@@ -620,7 +678,7 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
     try {
       const parsed = JSON.parse(raw) as unknown;
       const text = JSON.stringify(parsed, null, 2);
-      this.monacoEditor?.setValue(text);
+      this.setEditorValue(text, true);
       this.message.set('JSON formatted.');
       this.err.set(null);
     } catch {
@@ -718,7 +776,7 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
       return;
     }
     const text = JSON.stringify(cfg, null, 2);
-    this.monacoEditor?.setValue(text);
+    this.setEditorValue(text, true);
     this.message.set('Snapshot loaded into the editor (review, then Apply if needed).');
     this.err.set(null);
     this.layoutMainEditorSoon();
@@ -732,7 +790,7 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
         this.busy.set(false);
         const cfg = extractCaddyConfigFromSyncResponse(res);
         if (cfg && this.monacoEditor) {
-          this.monacoEditor.setValue(JSON.stringify(cfg, null, 2));
+          this.setEditorValue(JSON.stringify(cfg, null, 2), true);
           this.editorOk.set(true);
         }
         this.message.set('Sync from node completed (snapshot saved on the server).');

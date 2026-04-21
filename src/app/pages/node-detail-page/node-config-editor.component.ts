@@ -7,7 +7,12 @@ import { StitchIconComponent } from '../../ui/stitch-icon.component';
   standalone: true,
   imports: [StitchIconComponent],
   template: `
-    <div class="flex-1 min-w-0 min-h-0 h-full bg-stitch-surface-lowest flex flex-col">
+    <div
+      class="flex-1 min-w-0 min-h-0 h-full bg-stitch-surface-lowest flex flex-col"
+      [class.hidden]="visuallyHidden()"
+      [class.pointer-events-none]="visuallyHidden()"
+      [attr.aria-hidden]="visuallyHidden()"
+    >
       @if (showToolbar()) {
         <div
           class="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-stitch-ghost bg-stitch-surface-low shrink-0"
@@ -43,6 +48,7 @@ import { StitchIconComponent } from '../../ui/stitch-icon.component';
 export class NodeConfigEditorComponent {
   readonly showToolbar = input(true);
   readonly showDiffHost = input(false);
+  readonly visuallyHidden = input(false);
 
   readonly formatClick = output<void>();
   readonly copyClick = output<void>();
