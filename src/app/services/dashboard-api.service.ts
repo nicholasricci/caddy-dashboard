@@ -3,15 +3,20 @@ import { Observable } from 'rxjs';
 import {
   AuditLogListResultV1,
   ApplyConfigRequestV1,
+  BackfillSnapshotsResponseV1,
   CaddyConfigHostsResponseV1,
   CaddyConfigIdsResponseV1,
   CaddyConfigUpstreamsResponseV1,
   CaddyNodeV1,
+  CreateNodeRequestV1,
   CreateUserRequestV1,
   DiscoveryConfigV1,
+  SnapshotRecordV1,
+  UpdateNodeRequestV1,
   UpdateUserRequestV1,
   UserV1
 } from '../models/api-v1.model';
+import { AdminApiService } from './api/admin-api.service';
 import { AuditApiService } from './api/audit-api.service';
 import { DiscoveryApiService } from './api/discovery-api.service';
 import { NodesApiService } from './api/nodes-api.service';
@@ -31,6 +36,7 @@ export class DashboardApiService {
   private readonly nodes = inject(NodesApiService);
   private readonly discovery = inject(DiscoveryApiService);
   private readonly users = inject(UsersApiService);
+  private readonly admin = inject(AdminApiService);
 
   health(): Observable<unknown> {
     return this.system.health();
@@ -48,11 +54,11 @@ export class DashboardApiService {
     return this.nodes.getNode(id);
   }
 
-  createNode(body: CaddyNodeV1): Observable<CaddyNodeV1> {
+  createNode(body: CreateNodeRequestV1): Observable<CaddyNodeV1> {
     return this.nodes.createNode(body);
   }
 
-  updateNode(id: string, body: CaddyNodeV1): Observable<CaddyNodeV1> {
+  updateNode(id: string, body: UpdateNodeRequestV1): Observable<CaddyNodeV1> {
     return this.nodes.updateNode(id, body);
   }
 
@@ -92,7 +98,7 @@ export class DashboardApiService {
     return this.nodes.syncConfig(id);
   }
 
-  listSnapshots(id: string): Observable<Record<string, unknown>[]> {
+  listSnapshots(id: string): Observable<SnapshotRecordV1[]> {
     return this.nodes.listSnapshots(id);
   }
 
@@ -100,12 +106,16 @@ export class DashboardApiService {
     return this.discovery.listDiscovery();
   }
 
-  listDiscoverySnapshots(id: string): Observable<Record<string, unknown>[]> {
+  listDiscoverySnapshots(id: string): Observable<SnapshotRecordV1[]> {
     return this.discovery.listDiscoverySnapshots(id);
   }
 
   getDiscovery(id: string): Observable<DiscoveryConfigV1> {
     return this.discovery.getDiscovery(id);
+  }
+
+  backfillSnapshots(): Observable<BackfillSnapshotsResponseV1> {
+    return this.admin.backfillSnapshots();
   }
 
   createDiscovery(body: DiscoveryConfigV1): Observable<DiscoveryConfigV1> {

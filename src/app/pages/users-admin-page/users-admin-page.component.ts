@@ -62,6 +62,33 @@ function normalizeUsers(rows: unknown): UserV1[] {
         </div>
       }
 
+      <section class="stitch-panel stitch-panel--dim mb-10">
+        <p class="stitch-panel-title">Snapshot maintenance</p>
+        <p class="text-sm text-stitch-on-surface-variant mb-4 max-w-2xl leading-relaxed">
+          Re-run snapshot discovery backfill: reassigns legacy node-scoped snapshots for discovery rules using group
+          scope. Admin-only and idempotent on the server.
+        </p>
+        @if (backfillMessage()) {
+          <p class="text-sm text-stitch-on-surface mb-3 font-mono">{{ backfillMessage() }}</p>
+        }
+        @if (backfillError()) {
+          <p class="text-sm text-stitch-error mb-3">{{ backfillError() }}</p>
+        }
+        <button
+          type="button"
+          class="btn-stitch-secondary btn-stitch-secondary--sm stitch-icon-btn"
+          (click)="runBackfill()"
+          [disabled]="backfillBusy()"
+        >
+          @if (backfillBusy()) {
+            <span class="loading loading-spinner loading-xs"></span>
+          } @else {
+            <app-stitch-icon name="sync" size="xs" />
+          }
+          Run snapshot backfill
+        </button>
+      </section>
+
       <div class="flex justify-end mb-8">
         <button type="button" class="btn-stitch-primary btn-stitch-primary--sm stitch-icon-btn" (click)="openCreate()">
           <app-stitch-icon name="plus" size="xs" />
@@ -234,6 +261,9 @@ export class UsersAdminPageComponent {
   });
   readonly showModal = signal(false);
   readonly editingId = signal<string | null>(null);
+  readonly backfillBusy = signal(false);
+  readonly backfillMessage = signal<string | null>(null);
+  readonly backfillError = signal<string | null>(null);
 
   readonly userForm = this.fb.nonNullable.group({
     username: ['', [Validators.required]],
@@ -248,6 +278,33 @@ export class UsersAdminPageComponent {
   load(): void {
     this.actionError.set(null);
     this.refreshVersion.update(v => v + 1);
+  }
+
+  async runBackfill(): Promise<void> {
+    const confirmed = await this.confirmService.ask({
+      title: 'Run snapshot backfill?',
+      message:
+        'This reassigns discovery_config_id on legacy node-scoped snapshots for group-scoped discovery rules. Safe to repeat.',
+      confirmLabel: 'Run backfill',
+      cancelLabel: 'Cancel',
+      variant: 'default'
+    });
+    if (!confirmed) {
+      return;
+    }
+    this.backfillBusy.set(true);
+    this.backfillError.set(null);
+    this.backfillMessage.set(null);
+    this.api.backfillSnapshots().subscribe({
+      next: res => {
+        this.backfillBusy.set(false);
+        this.backfillMessage.set(`Rows updated: ${res.rows_updated ?? 0} · ${res.duration_ms ?? 0} ms`);
+      },
+      error: err => {
+        this.backfillBusy.set(false);
+        this.backfillError.set(extractApiError(err, 'Backfill failed'));
+      }
+    });
   }
 
   closeModal(): void {

@@ -17,7 +17,9 @@ import { FormsModule } from '@angular/forms';
 import { DashboardApiService } from '../../services/dashboard-api.service';
 import loader from '@monaco-editor/loader';
 import type { editor } from 'monaco-editor';
-import type { CaddyNodeV1, SnapshotScopeV1 } from '../../models/api-v1.model';
+import type { CaddyNodeV1, CaddyTransportV1, SnapshotRecordV1, SnapshotScopeV1 } from '../../models/api-v1.model';
+import { normalizeSnapshotRows } from '../../core/api-list-normalize.util';
+import { normalizeCaddyTransport } from '../../core/caddy-node-transport.util';
 import { StitchIconComponent } from '../../ui/stitch-icon.component';
 import { NodeConfigEditorComponent } from './node-config-editor.component';
 import { ConfigEditStore } from './visual-editor/config-edit.store';
@@ -28,24 +30,6 @@ import {
   extractConfigFromSnapshotRecord,
   isLikelyCaddyConfigRoot
 } from './node-detail-sync.util';
-
-function normalizeSnapshots(rows: unknown): Record<string, unknown>[] {
-  if (Array.isArray(rows)) {
-    return rows as Record<string, unknown>[];
-  }
-  if (!rows || typeof rows !== 'object') {
-    return [];
-  }
-
-  const obj = rows as Record<string, unknown>;
-  const candidates = [obj['items'], obj['snapshots'], obj['data']];
-  for (const value of candidates) {
-    if (Array.isArray(value)) {
-      return value as Record<string, unknown>[];
-    }
-  }
-  return [];
-}
 
 @Component({
   selector: 'app-node-detail-page',
@@ -163,16 +147,30 @@ function normalizeSnapshots(rows: unknown): Record<string, unknown>[] {
                   <dd class="text-right truncate" [title]="n.id || ''">{{ n.id || '—' }}</dd>
                 </div>
                 <div class="flex justify-between gap-2 border-b border-stitch-ghost/50 pb-2">
-                  <dt class="text-stitch-on-surface-variant shrink-0">SSM</dt>
-                  <dd>{{ n.ssm_enabled ? 'Yes' : 'No' }}</dd>
+                  <dt class="text-stitch-on-surface-variant shrink-0">Transport</dt>
+                  <dd class="text-right truncate" [title]="nodeTransport(n)">{{ nodeTransport(n) }}</dd>
                 </div>
+                @if (nodeTransport(n) === 'aws_ssm') {
+                  <div class="flex justify-between gap-2 border-b border-stitch-ghost/50 pb-2">
+                    <dt class="text-stitch-on-surface-variant shrink-0">SSM</dt>
+                    <dd>{{ n.ssm_enabled !== false ? 'Yes' : 'No' }}</dd>
+                  </div>
+                  <div class="flex justify-between gap-2 border-b border-stitch-ghost/50 pb-2">
+                    <dt class="text-stitch-on-surface-variant shrink-0">Region</dt>
+                    <dd>{{ n.region || '—' }}</dd>
+                  </div>
+                }
+                @if (transportConfigPreview(n)) {
+                  <div class="flex justify-between gap-2 border-b border-stitch-ghost/50 pb-2">
+                    <dt class="text-stitch-on-surface-variant shrink-0">Transport config</dt>
+                    <dd class="text-right truncate text-[10px] max-w-[12rem]" [title]="transportConfigPreview(n)">
+                      {{ transportConfigPreview(n) }}
+                    </dd>
+                  </div>
+                }
                 <div class="flex justify-between gap-2 border-b border-stitch-ghost/50 pb-2">
                   <dt class="text-stitch-on-surface-variant shrink-0">Instance</dt>
                   <dd class="text-right truncate" [title]="n.instance_id || ''">{{ n.instance_id || '—' }}</dd>
-                </div>
-                <div class="flex justify-between gap-2 border-b border-stitch-ghost/50 pb-2">
-                  <dt class="text-stitch-on-surface-variant shrink-0">Region</dt>
-                  <dd>{{ n.region || '—' }}</dd>
                 </div>
                 <div class="flex justify-between gap-2 border-b border-stitch-ghost/50 pb-2">
                   <dt class="text-stitch-on-surface-variant shrink-0">Created</dt>
@@ -385,7 +383,7 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
 
   readonly nodeId = this.route.snapshot.paramMap.get('id') || '';
   readonly node = signal<CaddyNodeV1 | null>(null);
-  readonly snapshots = signal<Record<string, unknown>[]>([]);
+  readonly snapshots = signal<SnapshotRecordV1[]>([]);
   readonly snapshotSource = signal<SnapshotScopeV1>('node');
   /** Client-side page size (API returns full list; no offset/limit in v1 swagger). */
   readonly snapPageSize = 10;
@@ -452,9 +450,26 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
     this.monacoEditor = null;
   }
 
-  snapshotTrack(s: Record<string, unknown>, index: number): string | number {
+  snapshotTrack(s: SnapshotRecordV1, index: number): string | number {
     const id = s['id'];
     return id != null ? String(id) : index;
+  }
+
+  nodeTransport(n: CaddyNodeV1): CaddyTransportV1 {
+    return normalizeCaddyTransport(n);
+  }
+
+  transportConfigPreview(n: CaddyNodeV1): string {
+    const cfg = n.transport_config;
+    if (!cfg || typeof cfg !== 'object' || Object.keys(cfg).length === 0) {
+      return '';
+    }
+    try {
+      const s = JSON.stringify(cfg);
+      return s.length > 120 ? `${s.slice(0, 117)}…` : s;
+    } catch {
+      return '';
+    }
   }
 
   snapPrevPage(): void {
@@ -541,7 +556,7 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
     );
   }
 
-  openLoadSnapshotConfirm(s: Record<string, unknown>): void {
+  openLoadSnapshotConfirm(s: SnapshotRecordV1): void {
     this.openConfirm(
       'Load snapshot into editor',
       'Replaces the editor with this saved snapshot. Review the JSON before applying or syncing.',
@@ -549,7 +564,7 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
     );
   }
 
-  openDiffSnapshotConfirm(s: Record<string, unknown>): void {
+  openDiffSnapshotConfirm(s: SnapshotRecordV1): void {
     this.openConfirm(
       'Compare snapshot to editor',
       'Opens a read-only side-by-side diff: snapshot on the left, current editor buffer on the right (not re-fetched from the node). The editor must contain valid JSON.',
@@ -687,7 +702,7 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
       }
     }
     if (typeof body === 'object' && !Array.isArray(body)) {
-      const o = body as Record<string, unknown>;
+      const o = body as SnapshotRecordV1;
       const nested =
         extractCaddyConfigFromSyncResponse(o) ??
         (isLikelyCaddyConfigRoot(o) ? o : null);
@@ -763,7 +778,7 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
           this.api.listDiscoverySnapshots(discoveryId).subscribe({
             next: rows => {
               this.snapshotSource.set('group');
-              this.snapshots.set(normalizeSnapshots(rows));
+              this.snapshots.set(normalizeSnapshotRows(rows));
               this.clampSnapPageIndex();
               this.snapLoading.set(false);
             },
@@ -787,7 +802,7 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
     this.snapshotSource.set('node');
     this.api.listSnapshots(this.nodeId).subscribe({
       next: rows => {
-        this.snapshots.set(normalizeSnapshots(rows));
+        this.snapshots.set(normalizeSnapshotRows(rows));
         this.clampSnapPageIndex();
         this.snapLoading.set(false);
       },
@@ -797,12 +812,12 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
     });
   }
 
-  snapshotLabel(s: Record<string, unknown>): string {
+  snapshotLabel(s: SnapshotRecordV1): string {
     const t = s['created_at'] ?? s['timestamp'] ?? s['id'];
     return t != null ? String(t) : JSON.stringify(s).slice(0, 80);
   }
 
-  private runLoadSnapshot(s: Record<string, unknown>): void {
+  private runLoadSnapshot(s: SnapshotRecordV1): void {
     const cfg = extractConfigFromSnapshotRecord(s);
     if (!cfg) {
       this.err.set('Could not read configuration from this snapshot.');
@@ -853,9 +868,9 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
   }
 
   private runApply(): void {
-    let parsed: Record<string, unknown>;
+    let parsed: SnapshotRecordV1;
     try {
-      parsed = JSON.parse(this.monacoEditor?.getValue() || '{}') as Record<string, unknown>;
+      parsed = JSON.parse(this.monacoEditor?.getValue() || '{}') as SnapshotRecordV1;
     } catch {
       this.err.set('Invalid JSON');
       return;
@@ -875,7 +890,7 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
     });
   }
 
-  private runOpenDiffAfterConfirm(s: Record<string, unknown>): void {
+  private runOpenDiffAfterConfirm(s: SnapshotRecordV1): void {
     const original = extractConfigFromSnapshotRecord(s);
     if (!original) {
       this.err.set('Could not read configuration from this snapshot.');
@@ -901,7 +916,7 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
   }
 
   private async mountDiffEditor(
-    originalObj: Record<string, unknown>,
+    originalObj: SnapshotRecordV1,
     modifiedRaw: string
   ): Promise<void> {
     const el = this.diffHost?.nativeElement;

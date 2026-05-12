@@ -1,13 +1,18 @@
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 import {
   CaddyConfigHostsResponseV1,
   ApplyConfigRequestV1,
   CaddyConfigIdsResponseV1,
   CaddyConfigUpstreamsResponseV1,
-  CaddyNodeV1
+  CaddyNodeV1,
+  CreateNodeRequestV1,
+  SnapshotRecordV1,
+  UpdateNodeRequestV1
 } from '../../models/api-v1.model';
 import { ApiBaseService } from './api-base.service';
+import { normalizeSnapshotRows } from '../../core/api-list-normalize.util';
 
 @Injectable({
   providedIn: 'root'
@@ -21,11 +26,11 @@ export class NodesApiService extends ApiBaseService {
     return this.http.get<CaddyNodeV1>(`${this.base}/nodes/${encodeURIComponent(id)}`);
   }
 
-  createNode(body: CaddyNodeV1): Observable<CaddyNodeV1> {
+  createNode(body: CreateNodeRequestV1): Observable<CaddyNodeV1> {
     return this.http.post<CaddyNodeV1>(`${this.base}/nodes`, body);
   }
 
-  updateNode(id: string, body: CaddyNodeV1): Observable<CaddyNodeV1> {
+  updateNode(id: string, body: UpdateNodeRequestV1): Observable<CaddyNodeV1> {
     return this.http.put<CaddyNodeV1>(`${this.base}/nodes/${encodeURIComponent(id)}`, body);
   }
 
@@ -71,7 +76,10 @@ export class NodesApiService extends ApiBaseService {
     return this.http.post<Record<string, unknown>>(`${this.base}/nodes/${encodeURIComponent(id)}/sync`, {});
   }
 
-  listSnapshots(id: string): Observable<Record<string, unknown>[]> {
-    return this.http.get<Record<string, unknown>[]>(`${this.base}/nodes/${encodeURIComponent(id)}/snapshots`);
+  listSnapshots(id: string): Observable<SnapshotRecordV1[]> {
+    return this.http
+      .get<unknown>(`${this.base}/nodes/${encodeURIComponent(id)}/snapshots`)
+      .pipe(map(rows => normalizeSnapshotRows(rows)));
   }
 }
+

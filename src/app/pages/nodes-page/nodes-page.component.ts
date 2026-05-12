@@ -1,58 +1,45 @@
 import { ChangeDetectionStrategy, Component, inject, signal, computed } from '@angular/core';
-
+import { rxResource, toSignal } from '@angular/core/rxjs-interop';
+import {
+  AbstractControl,
+  FormBuilder,
+  ReactiveFormsModule,
+  ValidationErrors,
+  ValidatorFn,
+  Validators
+} from '@angular/forms';
+import { forkJoin, map, startWith } from 'rxjs';
 import { RouterModule } from '@angular/router';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { rxResource } from '@angular/core/rxjs-interop';
-import { forkJoin, map } from 'rxjs';
 import { DashboardApiService } from '../../services/dashboard-api.service';
 import { StitchIconComponent } from '../../ui/stitch-icon.component';
 import { ConfirmService } from '../../ui/confirm.service';
-import type { CaddyNodeV1, DiscoveryConfigV1 } from '../../models/api-v1.model';
+import type { CaddyTransportV1, DiscoveryConfigV1 } from '../../models/api-v1.model';
 import { LiveConfigIdDialogComponent } from '../node-detail-page/live-config-id-dialog.component';
 import {
   buildDiscoveryGroups,
   defaultNodeCreateDraft,
   mapCaddyNodeV1ToListItem,
   mapNodeCreateDraftToPayload,
+  type NodeCreateDraftVm,
   type NodeListItemVm
 } from './nodes-page.vm';
 import { extractApiError } from '../../core/http-error.util';
+import { normalizeDiscoveryRows, normalizeNodeRows } from '../../core/api-list-normalize.util';
 
-function normalizeNodeRows(rows: unknown): CaddyNodeV1[] {
-  if (Array.isArray(rows)) {
-    return rows as CaddyNodeV1[];
+const sshTransportValidator: ValidatorFn = (ac: AbstractControl): ValidationErrors | null => {
+  const transport = ac.get('transport')?.value as string | undefined;
+  if (transport !== 'ssh') {
+    return null;
   }
-  if (!rows || typeof rows !== 'object') {
-    return [];
+  const user = String(ac.get('ssh_user')?.value ?? '').trim();
+  const pk = String(ac.get('ssh_private_key_ref')?.value ?? '').trim();
+  const host = String(ac.get('ssh_host')?.value ?? '').trim();
+  const sip = String(ac.get('ssh_private_ip')?.value ?? '').trim();
+  if (!user || !pk || (!host && !sip)) {
+    return { sshTransport: true };
   }
-
-  const obj = rows as Record<string, unknown>;
-  const candidates = [obj['items'], obj['nodes'], obj['data']];
-  for (const value of candidates) {
-    if (Array.isArray(value)) {
-      return value as CaddyNodeV1[];
-    }
-  }
-  return [];
-}
-
-function normalizeDiscoveryRows(rows: unknown): DiscoveryConfigV1[] {
-  if (Array.isArray(rows)) {
-    return rows as DiscoveryConfigV1[];
-  }
-  if (!rows || typeof rows !== 'object') {
-    return [];
-  }
-
-  const obj = rows as Record<string, unknown>;
-  const candidates = [obj['items'], obj['discovery'], obj['data']];
-  for (const value of candidates) {
-    if (Array.isArray(value)) {
-      return value as DiscoveryConfigV1[];
-    }
-  }
-  return [];
-}
+  return null;
+};
 
 @Component({
   selector: 'app-nodes-page',
@@ -68,7 +55,8 @@ function normalizeDiscoveryRows(rows: unknown): DiscoveryConfigV1[] {
             Server overview
           </h2>
           <p class="text-sm text-stitch-on-surface-variant mt-3 max-w-2xl leading-relaxed">
-            Registered Caddy instances. Sync pulls live config via SSM; open a node to edit config, then apply.
+            Registered Caddy instances. Sync pulls live config using each node’s transport; open a node to edit
+            config, then apply.
           </p>
         </div>
         <button
@@ -181,8 +169,8 @@ function normalizeDiscoveryRows(rows: unknown): DiscoveryConfigV1[] {
                         <th class="font-medium py-4 px-4 text-left align-bottom">Status</th>
                         <th class="font-mono text-[11px] py-4 px-4 text-left align-bottom">Private IP</th>
                         <th class="font-mono text-[11px] py-4 px-4 text-left align-bottom">Instance</th>
+                        <th class="font-medium py-4 px-4 text-left align-bottom">Transport</th>
                         <th class="font-medium py-4 px-4 text-left align-bottom">Region</th>
-                        <th class="font-medium py-4 px-4 text-left align-bottom">SSM</th>
                         <th class="py-4 px-4"></th>
                       </tr>
                     </thead>
@@ -204,8 +192,14 @@ function normalizeDiscoveryRows(rows: unknown): DiscoveryConfigV1[] {
                           >
                             {{ n.instance_id || '—' }}
                           </td>
-                          <td class="py-4 px-4 align-middle">{{ n.region || '—' }}</td>
-                          <td class="py-4 px-4 align-middle font-mono text-xs">{{ n.ssm_enabled ? 'Yes' : 'No' }}</td>
+                          <td class="py-4 px-4 align-middle font-mono text-xs">{{ n.transport }}</td>
+                          <td class="py-4 px-4 align-middle text-sm">
+                            @if (n.transport === 'aws_ssm') {
+                              {{ n.region || '—' }}
+                            } @else {
+                              —
+                            }
+                          </td>
                           <td class="py-4 px-4 text-right align-middle whitespace-nowrap">
                             <a
                               class="text-sm text-stitch-primary-fixed hover:text-stitch-on-surface mr-3 inline-flex items-center gap-1"
@@ -254,7 +248,7 @@ function normalizeDiscoveryRows(rows: unknown): DiscoveryConfigV1[] {
           (keydown.escape)="closeModal()"
         >
           <div
-            class="bg-stitch-surface-lowest w-full max-w-md rounded-sm border-stitch-ghost p-8 shadow-2xl"
+            class="bg-stitch-surface-lowest w-full max-w-lg max-h-[min(90vh,40rem)] overflow-y-auto rounded-sm border-stitch-ghost p-8 shadow-2xl"
             role="dialog"
             aria-modal="true"
             aria-labelledby="nodes-create-title"
@@ -285,6 +279,19 @@ function normalizeDiscoveryRows(rows: unknown): DiscoveryConfigV1[] {
               <div>
                 <label
                   class="block text-[11px] font-medium uppercase tracking-wider text-stitch-on-surface-variant"
+                  for="nodes-modal-transport"
+                  >Transport</label
+                >
+                <select id="nodes-modal-transport" class="select-technical mt-1 w-full" formControlName="transport">
+                  <option value="aws_ssm">AWS SSM (default)</option>
+                  <option value="ssh">SSH</option>
+                  <option value="http_admin">HTTP admin</option>
+                  <option value="inventory_only">Inventory only</option>
+                </select>
+              </div>
+              <div>
+                <label
+                  class="block text-[11px] font-medium uppercase tracking-wider text-stitch-on-surface-variant"
                   for="nodes-modal-private-ip"
                   >Private IP</label
                 >
@@ -308,28 +315,84 @@ function normalizeDiscoveryRows(rows: unknown): DiscoveryConfigV1[] {
                   placeholder="i-0abc…"
                 />
               </div>
-              <div>
-                <label
-                  class="block text-[11px] font-medium uppercase tracking-wider text-stitch-on-surface-variant"
-                  for="nodes-modal-region"
-                  >Region</label
-                >
-                <input
-                  id="nodes-modal-region"
-                  class="input-technical mt-1 font-mono text-sm"
-                  formControlName="region"
-                  placeholder="eu-south-1"
-                />
-              </div>
-              <label class="flex items-center gap-2 cursor-pointer text-sm text-stitch-on-surface" for="nodes-modal-ssm">
-                <input
-                  id="nodes-modal-ssm"
-                  type="checkbox"
-                  class="checkbox checkbox-sm rounded-sm"
-                  formControlName="ssm_enabled"
-                />
-                SSM enabled
-              </label>
+              @if (createTransport() === 'aws_ssm') {
+                <div>
+                  <label
+                    class="block text-[11px] font-medium uppercase tracking-wider text-stitch-on-surface-variant"
+                    for="nodes-modal-region"
+                    >AWS region</label
+                  >
+                  <input
+                    id="nodes-modal-region"
+                    class="input-technical mt-1 font-mono text-sm"
+                    formControlName="region"
+                    placeholder="eu-south-1"
+                  />
+                </div>
+              }
+              @if (createTransport() === 'ssh') {
+                <div class="space-y-4 border-t border-stitch-ghost pt-4">
+                  <p class="text-xs text-stitch-on-surface-variant">SSH transport requires user, private key ref, and host or private IP.</p>
+                  <div>
+                    <label
+                      class="block text-[11px] font-medium uppercase tracking-wider text-stitch-on-surface-variant"
+                      for="nodes-modal-ssh-user"
+                      >SSH user</label
+                    >
+                    <input id="nodes-modal-ssh-user" class="input-technical mt-1 font-mono text-sm" formControlName="ssh_user" />
+                  </div>
+                  <div>
+                    <label
+                      class="block text-[11px] font-medium uppercase tracking-wider text-stitch-on-surface-variant"
+                      for="nodes-modal-ssh-pk"
+                      >Private key ref</label
+                    >
+                    <input
+                      id="nodes-modal-ssh-pk"
+                      class="input-technical mt-1 font-mono text-sm"
+                      formControlName="ssh_private_key_ref"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      class="block text-[11px] font-medium uppercase tracking-wider text-stitch-on-surface-variant"
+                      for="nodes-modal-ssh-host"
+                      >Host</label
+                    >
+                    <input id="nodes-modal-ssh-host" class="input-technical mt-1 font-mono text-sm" formControlName="ssh_host" />
+                  </div>
+                  <div>
+                    <label
+                      class="block text-[11px] font-medium uppercase tracking-wider text-stitch-on-surface-variant"
+                      for="nodes-modal-ssh-pip"
+                      >Private IP (target)</label
+                    >
+                    <input
+                      id="nodes-modal-ssh-pip"
+                      class="input-technical mt-1 font-mono text-sm"
+                      formControlName="ssh_private_ip"
+                    />
+                  </div>
+                </div>
+              }
+              @if (createTransport() === 'http_admin') {
+                <div>
+                  <label
+                    class="block text-[11px] font-medium uppercase tracking-wider text-stitch-on-surface-variant"
+                    for="nodes-modal-http-base"
+                    >Admin base URL</label
+                  >
+                  <input
+                    id="nodes-modal-http-base"
+                    class="input-technical mt-1 font-mono text-sm"
+                    formControlName="http_base_url"
+                    placeholder="https://10.0.0.5:2019"
+                  />
+                </div>
+              }
+              @if (createForm.errors?.['sshTransport'] && createTransport() === 'ssh') {
+                <p class="text-sm text-stitch-error">Enter user, private key ref, and either host or private IP.</p>
+              }
             </form>
             <div class="flex justify-end gap-3 mt-10">
               <button type="button" class="btn-stitch-secondary btn-stitch-secondary--sm" (click)="closeModal()">
@@ -375,6 +438,29 @@ export class NodesPageComponent {
   readonly actionError = signal<string | null>(null);
   private readonly refreshVersion = signal(0);
 
+  readonly createForm = this.fb.nonNullable.group(
+    {
+      name: ['', [Validators.required]],
+      transport: ['aws_ssm' as CaddyTransportV1],
+      private_ip: [''],
+      instance_id: [''],
+      region: [''],
+      ssh_user: [''],
+      ssh_private_key_ref: [''],
+      ssh_host: [''],
+      ssh_private_ip: [''],
+      http_base_url: ['']
+    },
+    { validators: [sshTransportValidator] }
+  );
+
+  readonly createTransport = toSignal(
+    this.createForm.controls.transport.valueChanges.pipe(
+      startWith(this.createForm.controls.transport.value)
+    ),
+    { initialValue: this.createForm.controls.transport.value }
+  );
+
   readonly nodesResource = rxResource({
     stream: () => {
       this.refreshVersion();
@@ -417,16 +503,44 @@ export class NodesPageComponent {
     return total - this.onlineCount();
   });
 
-  readonly createForm = this.fb.nonNullable.group({
-    name: ['', [Validators.required]],
-    private_ip: [''],
-    instance_id: [''],
-    region: [''],
-    ssm_enabled: [false]
-  });
-
   constructor() {
+    this.syncTransportValidators();
+    this.createForm.controls.transport.valueChanges.subscribe(() => this.syncTransportValidators());
     this.load();
+  }
+
+  private syncTransportValidators(): void {
+    const t = this.createForm.controls.transport.value;
+    const region = this.createForm.controls.region;
+    const httpUrl = this.createForm.controls.http_base_url;
+    const su = this.createForm.controls.ssh_user;
+    const spk = this.createForm.controls.ssh_private_key_ref;
+    const sh = this.createForm.controls.ssh_host;
+    const spip = this.createForm.controls.ssh_private_ip;
+
+    region.clearValidators();
+    httpUrl.clearValidators();
+    su.clearValidators();
+    spk.clearValidators();
+    sh.clearValidators();
+    spip.clearValidators();
+
+    if (t === 'aws_ssm') {
+      region.setValidators([Validators.required]);
+    } else if (t === 'http_admin') {
+      httpUrl.setValidators([Validators.required]);
+    } else if (t === 'ssh') {
+      su.setValidators([Validators.required]);
+      spk.setValidators([Validators.required]);
+    }
+
+    region.updateValueAndValidity({ emitEvent: false });
+    httpUrl.updateValueAndValidity({ emitEvent: false });
+    su.updateValueAndValidity({ emitEvent: false });
+    spk.updateValueAndValidity({ emitEvent: false });
+    sh.updateValueAndValidity({ emitEvent: false });
+    spip.updateValueAndValidity({ emitEvent: false });
+    this.createForm.updateValueAndValidity({ emitEvent: false });
   }
 
   private isOnlineStatus(status: string | undefined): boolean {
@@ -446,7 +560,20 @@ export class NodesPageComponent {
   }
 
   openCreate(): void {
-    this.createForm.reset(defaultNodeCreateDraft());
+    const d = defaultNodeCreateDraft();
+    this.createForm.reset({
+      name: d.name,
+      transport: d.transport,
+      private_ip: d.private_ip,
+      instance_id: d.instance_id,
+      region: d.region,
+      ssh_user: d.ssh_user,
+      ssh_private_key_ref: d.ssh_private_key_ref,
+      ssh_host: d.ssh_host,
+      ssh_private_ip: d.ssh_private_ip,
+      http_base_url: d.http_base_url
+    });
+    this.syncTransportValidators();
     this.showModal.set(true);
   }
 
@@ -455,7 +582,7 @@ export class NodesPageComponent {
       return;
     }
     this.saving.set(true);
-    this.api.createNode(mapNodeCreateDraftToPayload(this.createForm.getRawValue())).subscribe({
+    this.api.createNode(mapNodeCreateDraftToPayload(this.createForm.getRawValue() as NodeCreateDraftVm)).subscribe({
       next: () => {
         this.saving.set(false);
         this.showModal.set(false);

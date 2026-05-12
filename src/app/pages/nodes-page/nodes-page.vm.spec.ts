@@ -1,5 +1,54 @@
 import type { DiscoveryConfigV1 } from '../../models/api-v1.model';
-import { buildDiscoveryGroups, type NodeListItemVm } from './nodes-page.vm';
+import {
+  buildDiscoveryGroups,
+  mapCaddyNodeV1ToListItem,
+  mapNodeCreateDraftToPayload,
+  defaultNodeCreateDraft,
+  type NodeListItemVm
+} from './nodes-page.vm';
+
+describe('mapCaddyNodeV1ToListItem', () => {
+  it('normalizes empty transport to aws_ssm', () => {
+    expect(mapCaddyNodeV1ToListItem({ id: '1' }).transport).toBe('aws_ssm');
+  });
+
+  it('preserves http_admin', () => {
+    expect(mapCaddyNodeV1ToListItem({ id: '1', transport: 'http_admin' }).transport).toBe('http_admin');
+  });
+});
+
+describe('mapNodeCreateDraftToPayload', () => {
+  it('omits region for non-SSM transport', () => {
+    const p = mapNodeCreateDraftToPayload({
+      ...defaultNodeCreateDraft(),
+      name: 'edge',
+      transport: 'ssh',
+      region: 'eu-west-1',
+      ssh_user: 'ubuntu',
+      ssh_private_key_ref: 'ref/pk',
+      ssh_host: '10.0.0.5',
+      ssh_private_ip: ''
+    });
+    expect(p.region).toBeUndefined();
+    expect(p.transport).toBe('ssh');
+    expect(p.transport_config).toEqual({
+      user: 'ubuntu',
+      private_key_ref: 'ref/pk',
+      host: '10.0.0.5'
+    });
+  });
+
+  it('includes region for aws_ssm', () => {
+    const p = mapNodeCreateDraftToPayload({
+      ...defaultNodeCreateDraft(),
+      name: 'edge',
+      transport: 'aws_ssm',
+      region: 'eu-south-1'
+    });
+    expect(p.region).toBe('eu-south-1');
+    expect(p.transport_config).toEqual({});
+  });
+});
 
 describe('buildDiscoveryGroups', () => {
   it('groups nodes by discovery config and appends unassigned last', () => {
@@ -12,7 +61,8 @@ describe('buildDiscoveryGroups', () => {
         instance_id: 'i-1',
         discovery_config_id: 'd-enabled',
         region: 'eu-west-1',
-        ssm_enabled: true
+        ssm_enabled: true,
+        transport: 'aws_ssm'
       },
       {
         id: 'n2',
@@ -22,7 +72,8 @@ describe('buildDiscoveryGroups', () => {
         instance_id: 'i-2',
         discovery_config_id: '',
         region: 'eu-west-1',
-        ssm_enabled: true
+        ssm_enabled: true,
+        transport: 'aws_ssm'
       },
       {
         id: 'n3',
@@ -32,7 +83,8 @@ describe('buildDiscoveryGroups', () => {
         instance_id: 'i-3',
         discovery_config_id: 'missing',
         region: 'eu-west-1',
-        ssm_enabled: false
+        ssm_enabled: false,
+        transport: 'ssh'
       }
     ];
     const configs: DiscoveryConfigV1[] = [

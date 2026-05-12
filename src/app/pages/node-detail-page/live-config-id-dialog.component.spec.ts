@@ -117,4 +117,58 @@ describe('LiveConfigIdDialogComponent', () => {
     expect(component.idSearchQuery()).toBe('');
     expect(input.value).toBe('');
   });
+
+  describe('detail load', () => {
+    let getLiveConfigById: jasmine.Spy;
+    let getLiveConfigUpstreams: jasmine.Spy;
+    let getLiveConfigHosts: jasmine.Spy;
+
+    beforeEach(async () => {
+      listLiveConfigIds = jasmine
+        .createSpy('listLiveConfigIds')
+        .and.returnValue(of({ items: [{ id: 'route/main', has_upstreams: true, host_count: 1 }] }));
+      getLiveConfigById = jasmine.createSpy('getLiveConfigById').and.returnValue(of({ handler: 'subroute' }));
+      getLiveConfigUpstreams = jasmine
+        .createSpy('getLiveConfigUpstreams')
+        .and.returnValue(of({ has_upstreams: true, upstreams: [{ dial: '127.0.0.1:80' }] }));
+      getLiveConfigHosts = jasmine.createSpy('getLiveConfigHosts').and.returnValue(of({ host_count: 1, hosts: ['a.example'] }));
+
+      await TestBed.resetTestingModule();
+      await TestBed.configureTestingModule({
+        imports: [LiveConfigIdDialogComponent],
+        providers: [
+          provideZonelessChangeDetection(),
+          {
+            provide: DashboardApiService,
+            useValue: {
+              listLiveConfigIds,
+              getLiveConfigById,
+              getLiveConfigUpstreams,
+              getLiveConfigHosts
+            }
+          }
+        ]
+      }).compileComponents();
+
+      fixture = TestBed.createComponent(LiveConfigIdDialogComponent);
+      component = fixture.componentInstance;
+      fixture.componentRef.setInput('open', true);
+      fixture.componentRef.setInput('nodeId', 'node-detail-1');
+      fixture.detectChanges();
+    });
+
+    it('loads fragment, upstreams, and hosts when an @id is selected', () => {
+      const asideButtons = fixture.nativeElement.querySelectorAll('aside button[type="button"]');
+      expect(asideButtons.length).toBe(1);
+      asideButtons[0].click();
+      fixture.detectChanges();
+
+      expect(getLiveConfigById).toHaveBeenCalledWith('node-detail-1', 'route/main');
+      expect(getLiveConfigUpstreams).toHaveBeenCalledWith('node-detail-1', 'route/main');
+      expect(getLiveConfigHosts).toHaveBeenCalledWith('node-detail-1', 'route/main');
+      expect(fixture.nativeElement.textContent).toContain('subroute');
+      expect(fixture.nativeElement.textContent).toContain('127.0.0.1:80');
+      expect(fixture.nativeElement.textContent).toContain('a.example');
+    });
+  });
 });

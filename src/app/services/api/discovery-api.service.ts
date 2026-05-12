@@ -1,26 +1,9 @@
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
-import { DiscoveryConfigV1 } from '../../models/api-v1.model';
+import { DiscoveryConfigV1, SnapshotRecordV1 } from '../../models/api-v1.model';
+import { normalizeSnapshotRows } from '../../core/api-list-normalize.util';
 import { ApiBaseService } from './api-base.service';
-
-function normalizeSnapshotRows(rows: unknown): Record<string, unknown>[] {
-  if (Array.isArray(rows)) {
-    return rows as Record<string, unknown>[];
-  }
-  if (!rows || typeof rows !== 'object') {
-    return [];
-  }
-
-  const obj = rows as Record<string, unknown>;
-  const candidates = [obj['items'], obj['snapshots'], obj['data']];
-  for (const value of candidates) {
-    if (Array.isArray(value)) {
-      return value as Record<string, unknown>[];
-    }
-  }
-  return [];
-}
 
 @Injectable({
   providedIn: 'root'
@@ -50,7 +33,7 @@ export class DiscoveryApiService extends ApiBaseService {
     return this.http.post<unknown>(`${this.base}/discovery/${encodeURIComponent(id)}/run`, {});
   }
 
-  listDiscoverySnapshots(id: string): Observable<Record<string, unknown>[]> {
+  listDiscoverySnapshots(id: string): Observable<SnapshotRecordV1[]> {
     return this.http
       .get<unknown>(`${this.base}/discovery/${encodeURIComponent(id)}/snapshots`)
       .pipe(map(rows => normalizeSnapshotRows(rows)));

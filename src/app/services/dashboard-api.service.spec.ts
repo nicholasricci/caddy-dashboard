@@ -161,4 +161,40 @@ describe('DashboardApiService', () => {
     expect(req.request.method).toBe('GET');
     req.flush({ snapshots: [{ id: 'snap-1' }] });
   });
+
+  it('createNode POSTs body with transport', done => {
+    service
+      .createNode({
+        name: 'n1',
+        transport: 'inventory_only',
+        transport_config: {}
+      })
+      .subscribe({
+        next: () => done(),
+        error: done.fail
+      });
+    const req = httpMock.expectOne(`${apiBase}/nodes`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({
+      name: 'n1',
+      transport: 'inventory_only',
+      transport_config: {}
+    });
+    req.flush({ id: 'new', name: 'n1', transport: 'inventory_only' });
+  });
+
+  it('backfillSnapshots POSTs /snapshots/backfill', done => {
+    service.backfillSnapshots().subscribe({
+      next: res => {
+        expect(res.rows_updated).toBe(3);
+        expect(res.duration_ms).toBe(100);
+        done();
+      },
+      error: done.fail
+    });
+    const req = httpMock.expectOne(`${apiBase}/snapshots/backfill`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({});
+    req.flush({ rows_updated: 3, duration_ms: 100 });
+  });
 });

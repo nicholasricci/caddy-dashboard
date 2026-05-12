@@ -8,6 +8,7 @@ import { StitchIconComponent } from '../../ui/stitch-icon.component';
 import { ConfirmService } from '../../ui/confirm.service';
 import { DiscoveryRuleFormModalComponent } from './discovery-rule-form-modal.component';
 import { extractApiError } from '../../core/http-error.util';
+import { normalizeDiscoveryRows } from '../../core/api-list-normalize.util';
 
 type DiscoveryMethodId = 'aws_ssm' | 'aws_tag' | 'static_ip';
 
@@ -40,24 +41,6 @@ const OPTIMISTIC_DISCOVERY_TTL_MS = 15000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object';
-}
-
-function normalizeDiscoveryRows(rows: unknown): DiscoveryConfigV1[] {
-  if (Array.isArray(rows)) {
-    return rows as DiscoveryConfigV1[];
-  }
-  if (!rows || typeof rows !== 'object') {
-    return [];
-  }
-
-  const obj = rows as Record<string, unknown>;
-  const candidates = [obj['items'], obj['discovery'], obj['data']];
-  for (const value of candidates) {
-    if (Array.isArray(value)) {
-      return value as DiscoveryConfigV1[];
-    }
-  }
-  return [];
 }
 
 function coerceMethod(m: string | undefined): DiscoveryMethodId {
