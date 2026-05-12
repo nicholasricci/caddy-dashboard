@@ -56,8 +56,27 @@ import { StitchIconComponent } from '../../ui/stitch-icon.component';
               } @else if (idItems().length === 0) {
                 <p class="text-sm text-stitch-on-surface-variant">No @id entries found.</p>
               } @else {
-                <ul class="space-y-2">
-                  @for (item of idItems(); track trackId(item, $index)) {
+                <div class="mb-3">
+                  <label
+                    for="live-config-id-filter"
+                    class="block text-[11px] font-medium uppercase tracking-wider text-stitch-on-surface-variant mb-2"
+                    >Search IDs</label
+                  >
+                  <input
+                    id="live-config-id-filter"
+                    type="search"
+                    autocomplete="off"
+                    class="input-technical mt-1 w-full font-mono text-xs"
+                    aria-controls="live-config-id-list"
+                    [value]="idSearchQuery()"
+                    (input)="onIdSearchInput($event)"
+                  />
+                </div>
+                @if (filteredIdItems().length === 0) {
+                  <p class="text-sm text-stitch-on-surface-variant">No matching IDs.</p>
+                } @else {
+                  <ul id="live-config-id-list" class="space-y-2">
+                  @for (item of filteredIdItems(); track trackId(item, $index)) {
                     <li>
                       <button
                         type="button"
@@ -78,7 +97,8 @@ import { StitchIconComponent } from '../../ui/stitch-icon.component';
                       </button>
                     </li>
                   }
-                </ul>
+                  </ul>
+                }
               }
             </aside>
 
@@ -147,6 +167,7 @@ export class LiveConfigIdDialogComponent {
   readonly loadingIds = signal(false);
   readonly idsError = signal<string | null>(null);
   readonly idItems = signal<CaddyConfigIdInfoV1[]>([]);
+  readonly idSearchQuery = signal('');
 
   readonly selectedId = signal<string | null>(null);
   readonly loadingDetail = signal(false);
@@ -158,6 +179,15 @@ export class LiveConfigIdDialogComponent {
   readonly fragmentPretty = computed(() => JSON.stringify(this.currentFragment() ?? {}, null, 2));
   readonly upstreamsPretty = computed(() => JSON.stringify(this.currentUpstreams()?.upstreams ?? [], null, 2));
   readonly hostsPretty = computed(() => JSON.stringify(this.currentHosts()?.hosts ?? [], null, 2));
+
+  readonly filteredIdItems = computed(() => {
+    const q = this.idSearchQuery().trim().toLowerCase();
+    const items = this.idItems();
+    if (!q) {
+      return items;
+    }
+    return items.filter(item => (item.id ?? '').toLowerCase().includes(q));
+  });
 
   constructor() {
     effect(() => {
@@ -175,6 +205,11 @@ export class LiveConfigIdDialogComponent {
 
   trackId(item: CaddyConfigIdInfoV1, index: number): string | number {
     return item.id ?? index;
+  }
+
+  onIdSearchInput(event: Event): void {
+    const el = event.target as HTMLInputElement | null;
+    this.idSearchQuery.set(el?.value ?? '');
   }
 
   select(item: CaddyConfigIdInfoV1): void {
@@ -219,6 +254,7 @@ export class LiveConfigIdDialogComponent {
     this.loadingIds.set(true);
     this.idsError.set(null);
     this.idItems.set([]);
+    this.idSearchQuery.set('');
     this.selectedId.set(null);
     this.currentFragment.set(null);
     this.currentUpstreams.set(null);
