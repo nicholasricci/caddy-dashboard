@@ -197,4 +197,31 @@ describe('DashboardApiService', () => {
     expect(req.request.body).toEqual({});
     req.flush({ rows_updated: 3, duration_ms: 100 });
   });
+
+  it('mutateDomains delegates to nodes API', done => {
+    const body = { targets: [{ config_id: 'x', add_domains: ['a.test'] }], dry_run: true };
+    service.mutateDomains('n1', body).subscribe({
+      next: res => {
+        expect(res.dry_run).toBe(true);
+        done();
+      },
+      error: done.fail
+    });
+    const req = httpMock.expectOne(`${apiBase}/nodes/n1/config/mutate/domains`);
+    expect(req.request.body).toEqual(body);
+    req.flush({ dry_run: true, changed: false });
+  });
+
+  it('propagateConfig delegates to nodes API', done => {
+    service.propagateConfig('n1').subscribe({
+      next: res => {
+        expect(res.applied_to?.length).toBe(1);
+        done();
+      },
+      error: done.fail
+    });
+    const req = httpMock.expectOne(`${apiBase}/nodes/n1/config/propagate`);
+    expect(req.request.method).toBe('POST');
+    req.flush({ source_node_id: 'n1', applied_to: ['p1'], skipped: [] });
+  });
 });

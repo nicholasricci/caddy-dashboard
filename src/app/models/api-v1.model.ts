@@ -182,3 +182,88 @@ export interface SessionUserV1 {
   role: string | null;
   isAdmin: boolean;
 }
+
+/** POST /api/v1/nodes/{id}/config/mutate/domains */
+export interface DnsChallengeRequestV1 {
+  provider?: string;
+  api_token?: string;
+}
+
+export interface DomainMutationTargetRequestV1 {
+  config_id: string;
+  add_domains?: string[];
+  remove_domains?: string[];
+  match_indexes?: number[];
+}
+
+export interface MutateDomainsRequestV1 {
+  targets: DomainMutationTargetRequestV1[];
+  dry_run?: boolean;
+  update_tls_policies?: boolean;
+  dns_challenge?: DnsChallengeRequestV1;
+}
+
+export interface DomainMutationDiffV1 {
+  added?: string[];
+  removed?: string[];
+}
+
+export interface DomainMutationResultV1 {
+  config_id?: string;
+  changed?: boolean;
+  added?: string[];
+  removed?: string[];
+  hosts?: string[];
+}
+
+export interface MutateDomainsResponseV1 {
+  changed?: boolean;
+  dry_run?: boolean;
+  diff?: DomainMutationDiffV1;
+  preview?: Record<string, unknown>;
+  results?: DomainMutationResultV1[];
+}
+
+/** POST /api/v1/nodes/{id}/config/mutate/upstreams */
+export interface UpstreamMutationTargetRequestV1 {
+  config_id: string;
+  add_dial?: string;
+  remove_dial?: string;
+  probe_timeout_ms?: number;
+  prune_unhealthy?: boolean;
+}
+
+export interface MutateUpstreamsRequestV1 {
+  targets: UpstreamMutationTargetRequestV1[];
+  dry_run?: boolean;
+}
+
+export interface UpstreamMutationDiffV1 {
+  added?: string[];
+  removed?: string[];
+  pruned?: string[];
+}
+
+export interface UpstreamMutationResultV1 {
+  config_id?: string;
+  changed?: boolean;
+  added?: string[];
+  removed?: string[];
+  pruned?: string[];
+  upstreams?: string[];
+}
+
+export interface MutateUpstreamsResponseV1 {
+  changed?: boolean;
+  dry_run?: boolean;
+  diff?: UpstreamMutationDiffV1;
+  preview?: Record<string, unknown>;
+  results?: UpstreamMutationResultV1[];
+}
+
+/** POST /api/v1/nodes/{id}/config/propagate */
+export interface PropagateConfigResponseV1 {
+  source_node_id?: string;
+  applied_to?: string[];
+  skipped?: string[];
+}

@@ -8,6 +8,11 @@ import {
   CaddyConfigUpstreamsResponseV1,
   CaddyNodeV1,
   CreateNodeRequestV1,
+  MutateDomainsRequestV1,
+  MutateDomainsResponseV1,
+  MutateUpstreamsRequestV1,
+  MutateUpstreamsResponseV1,
+  PropagateConfigResponseV1,
   SnapshotRecordV1,
   UpdateNodeRequestV1
 } from '../../models/api-v1.model';
@@ -80,6 +85,27 @@ export class NodesApiService extends ApiBaseService {
     return this.http
       .get<unknown>(`${this.base}/nodes/${encodeURIComponent(id)}/snapshots`)
       .pipe(map(rows => normalizeSnapshotRows(rows)));
+  }
+
+  mutateDomains(id: string, body: MutateDomainsRequestV1): Observable<MutateDomainsResponseV1> {
+    return this.http.post<MutateDomainsResponseV1>(
+      `${this.base}/nodes/${encodeURIComponent(id)}/config/mutate/domains`,
+      body
+    );
+  }
+
+  mutateUpstreams(id: string, body: MutateUpstreamsRequestV1): Observable<MutateUpstreamsResponseV1> {
+    return this.http.post<MutateUpstreamsResponseV1>(
+      `${this.base}/nodes/${encodeURIComponent(id)}/config/mutate/upstreams`,
+      body
+    );
+  }
+
+  propagateConfig(id: string): Observable<PropagateConfigResponseV1> {
+    return this.http.post<PropagateConfigResponseV1>(
+      `${this.base}/nodes/${encodeURIComponent(id)}/config/propagate`,
+      {}
+    );
   }
 }
 

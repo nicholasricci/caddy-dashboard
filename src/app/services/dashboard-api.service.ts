@@ -11,6 +11,11 @@ import {
   CreateNodeRequestV1,
   CreateUserRequestV1,
   DiscoveryConfigV1,
+  MutateDomainsRequestV1,
+  MutateDomainsResponseV1,
+  MutateUpstreamsRequestV1,
+  MutateUpstreamsResponseV1,
+  PropagateConfigResponseV1,
   SnapshotRecordV1,
   UpdateNodeRequestV1,
   UpdateUserRequestV1,
@@ -100,6 +105,18 @@ export class DashboardApiService {
 
   listSnapshots(id: string): Observable<SnapshotRecordV1[]> {
     return this.nodes.listSnapshots(id);
+  }
+
+  mutateDomains(id: string, body: MutateDomainsRequestV1): Observable<MutateDomainsResponseV1> {
+    return this.nodes.mutateDomains(id, body);
+  }
+
+  mutateUpstreams(id: string, body: MutateUpstreamsRequestV1): Observable<MutateUpstreamsResponseV1> {
+    return this.nodes.mutateUpstreams(id, body);
+  }
+
+  propagateConfig(id: string): Observable<PropagateConfigResponseV1> {
+    return this.nodes.propagateConfig(id);
   }
 
   listDiscovery(): Observable<DiscoveryConfigV1[]> {

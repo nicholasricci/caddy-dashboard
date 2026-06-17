@@ -17,10 +17,12 @@ import { FormsModule } from '@angular/forms';
 import { DashboardApiService } from '../../services/dashboard-api.service';
 import loader from '@monaco-editor/loader';
 import type { editor } from 'monaco-editor';
-import type { CaddyNodeV1, CaddyTransportV1, SnapshotRecordV1, SnapshotScopeV1 } from '../../models/api-v1.model';
+import type { CaddyNodeV1, CaddyTransportV1, PropagateConfigResponseV1, SnapshotRecordV1, SnapshotScopeV1 } from '../../models/api-v1.model';
 import { normalizeSnapshotRows } from '../../core/api-list-normalize.util';
 import { normalizeCaddyTransport } from '../../core/caddy-node-transport.util';
+import { extractApiError } from '../../core/http-error.util';
 import { StitchIconComponent } from '../../ui/stitch-icon.component';
+import { ConfirmService } from '../../ui/confirm.service';
 import { NodeConfigEditorComponent } from './node-config-editor.component';
 import { ConfigEditStore } from './visual-editor/config-edit.store';
 import { VisualConfigEditorComponent } from './visual-editor/visual-config-editor.component';
@@ -89,6 +91,16 @@ import {
             >
               <app-stitch-icon name="reload" size="xs" />
               Reload Caddy
+            </button>
+            <button
+              type="button"
+              class="btn-stitch-secondary btn-stitch-secondary--sm stitch-icon-btn"
+              (click)="openPropagateConfirm()"
+              [disabled]="busy() || !canPropagate()"
+              [title]="canPropagate() ? 'Propagate live config to all peers in the same discovery rule' : 'Requires a node linked to a discovery rule'"
+            >
+              <app-stitch-icon name="sync" size="xs" />
+              Propagate
             </button>
             <button
               type="button"
@@ -363,6 +375,74 @@ import {
         </div>
       }
 
+      @if (propagateResultOpen()) {
+        <div
+          class="fixed inset-0 z-[65] flex items-center justify-center p-4 stitch-modal-scrim backdrop-blur-md"
+          role="presentation"
+          tabindex="-1"
+          (click)="closePropagateResultModal()"
+          (keydown.enter)="closePropagateResultModal()"
+          (keydown.space)="$event.preventDefault(); closePropagateResultModal()"
+          (keydown.escape)="closePropagateResultModal()"
+        >
+          <div
+            class="bg-stitch-surface-lowest w-full max-w-lg rounded-sm p-8 border-stitch-ghost shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="node-detail-propagate-title"
+            (click)="$event.stopPropagation()"
+            (keydown)="$event.stopPropagation()"
+          >
+            <h3 id="node-detail-propagate-title" class="font-display text-lg font-semibold mb-3 text-stitch-on-surface flex items-center gap-2">
+              <app-stitch-icon name="sync" size="sm" class="text-stitch-primary-fixed" />
+              Propagate result
+            </h3>
+            <p class="text-sm text-stitch-on-surface-variant mb-4">
+              Live config propagated from this node to peers in the same discovery rule.
+            </p>
+            @if (propagateResult(); as result) {
+              <div class="space-y-4 text-sm font-mono">
+                <div class="stitch-panel stitch-panel--dim !p-4">
+                  <div class="flex items-center gap-2 mb-2">
+                    <span class="stitch-status-chip">applied</span>
+                    <p class="stitch-panel-title">Applied to</p>
+                  </div>
+                  @if ((result.applied_to?.length ?? 0) === 0) {
+                    <p class="text-stitch-on-surface-variant">No peers received the configuration.</p>
+                  } @else {
+                    <ul class="space-y-1 text-stitch-on-surface">
+                      @for (peer of result.applied_to ?? []; track peer) {
+                        <li class="break-all">{{ peer }}</li>
+                      }
+                    </ul>
+                  }
+                </div>
+                <div class="stitch-panel stitch-panel--dim !p-4">
+                  <div class="flex items-center gap-2 mb-2">
+                    <span class="stitch-status-chip">skipped</span>
+                    <p class="stitch-panel-title">Skipped</p>
+                  </div>
+                  @if ((result.skipped?.length ?? 0) === 0) {
+                    <p class="text-stitch-on-surface-variant">No peers were skipped.</p>
+                  } @else {
+                    <ul class="space-y-1 text-stitch-on-surface">
+                      @for (peer of result.skipped ?? []; track peer) {
+                        <li class="break-all">{{ peer }}</li>
+                      }
+                    </ul>
+                  }
+                </div>
+              </div>
+            }
+            <div class="flex justify-end mt-8">
+              <button type="button" class="btn-stitch-secondary btn-stitch-secondary--sm" (click)="closePropagateResultModal()">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      }
+
       <app-live-config-id-dialog
         [open]="liveConfigIdDialogOpen()"
         [nodeId]="nodeId"
@@ -374,6 +454,7 @@ import {
 })
 export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
   private readonly api = inject(DashboardApiService);
+  private readonly confirm = inject(ConfirmService);
   private readonly route = inject(ActivatedRoute);
   private readonly injector = inject(Injector);
   readonly configEditStore = inject(ConfigEditStore);
@@ -402,6 +483,8 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
   readonly diffOpen = signal(false);
   readonly diffFooterError = signal<string | null>(null);
   readonly liveConfigIdDialogOpen = signal(false);
+  readonly propagateResultOpen = signal(false);
+  readonly propagateResult = signal<PropagateConfigResponseV1 | null>(null);
 
   private monacoEditor: editor.IStandaloneCodeEditor | null = null;
   private monacoNs: typeof import('monaco-editor') | null = null;
@@ -436,6 +519,8 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
     const nextStart = (this.snapPageIndex() + 1) * this.snapPageSize;
     return nextStart < total;
   });
+
+  readonly canPropagate = computed(() => Boolean(this.node()?.discovery_config_id?.trim()));
 
   ngAfterViewInit(): void {
     if (this.nodeId) {
@@ -578,6 +663,47 @@ export class NodeDetailPageComponent implements AfterViewInit, OnDestroy {
 
   closeLiveConfigIdDialog(): void {
     this.liveConfigIdDialogOpen.set(false);
+  }
+
+  async openPropagateConfirm(): Promise<void> {
+    if (!this.canPropagate()) {
+      return;
+    }
+    const ok = await this.confirm.ask({
+      title: 'Propagate live config?',
+      message:
+        'Fetches the live configuration from this node and applies it to all peers in the same discovery rule. Peers that cannot be updated are listed as skipped.',
+      confirmLabel: 'Propagate'
+    });
+    if (!ok) {
+      return;
+    }
+    this.runPropagate();
+  }
+
+  closePropagateResultModal(): void {
+    this.propagateResultOpen.set(false);
+    this.propagateResult.set(null);
+  }
+
+  private runPropagate(): void {
+    this.busy.set(true);
+    this.err.set(null);
+    this.api.propagateConfig(this.nodeId).subscribe({
+      next: res => {
+        this.busy.set(false);
+        this.propagateResult.set(res);
+        this.propagateResultOpen.set(true);
+        const applied = res.applied_to?.length ?? 0;
+        const skipped = res.skipped?.length ?? 0;
+        this.message.set(`Propagate completed: ${applied} applied, ${skipped} skipped.`);
+        this.loadSnapshots();
+      },
+      error: err => {
+        this.busy.set(false);
+        this.err.set(extractApiError(err, 'Propagate failed'));
+      }
+    });
   }
 
   toggleViewMode(): void {
