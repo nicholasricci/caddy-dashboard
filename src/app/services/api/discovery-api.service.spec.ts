@@ -75,4 +75,25 @@ describe('DiscoveryApiService', () => {
     expect(req.request.headers.get('Authorization')).toBe('cdk_live_secret');
     req.flush({ changed: false, dry_run: true });
   });
+
+  it('registerDomain POSTs with API key Authorization header', done => {
+    const body = {
+      config_id: '@route-main',
+      domains: ['app.example.com'],
+      dry_run: true
+    };
+    service.registerDomain('disc-1', 'cdk_live_secret', body).subscribe({
+      next: res => {
+        expect(res.dry_run).toBe(true);
+        done();
+      },
+      error: done.fail
+    });
+
+    const req = httpMock.expectOne(`${apiBase}/discovery/disc-1/register-domain`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual(body);
+    expect(req.request.headers.get('Authorization')).toBe('cdk_live_secret');
+    req.flush({ changed: false, dry_run: true });
+  });
 });

@@ -8,6 +8,7 @@ import { StitchIconComponent } from '../../ui/stitch-icon.component';
 import { ConfirmService } from '../../ui/confirm.service';
 import { DiscoveryRuleFormModalComponent } from './discovery-rule-form-modal.component';
 import { DiscoveryUpstreamProfilesPanelComponent } from './discovery-upstream-profiles-panel.component';
+import { DiscoveryDomainProfilesPanelComponent } from './discovery-domain-profiles-panel.component';
 import { extractApiError } from '../../core/http-error.util';
 import { normalizeDiscoveryRows } from '../../core/api-list-normalize.util';
 
@@ -234,7 +235,8 @@ export class DiscoveryRuleCardComponent {
     StitchIconComponent,
     DiscoveryRuleFormModalComponent,
     DiscoveryRuleCardComponent,
-    DiscoveryUpstreamProfilesPanelComponent
+    DiscoveryUpstreamProfilesPanelComponent,
+    DiscoveryDomainProfilesPanelComponent
   ],
   template: `
     <div class="px-10 py-12 max-w-6xl mx-auto">
@@ -298,6 +300,7 @@ export class DiscoveryRuleCardComponent {
                   />
                   @if (profilesExpandedId() === d.id && d.id) {
                     <app-discovery-upstream-profiles-panel [discoveryId]="d.id" [discoveryName]="d.name || d.id" />
+                    <app-discovery-domain-profiles-panel [discoveryId]="d.id" [discoveryName]="d.name || d.id" />
                   }
                 </div>
               } @empty {

@@ -5,10 +5,14 @@ import { forkJoin, of } from 'rxjs';
 import { map, switchMap } from 'rxjs/operators';
 import { DashboardApiService } from '../../services/dashboard-api.service';
 import { UpstreamProfilesApiService } from '../../services/api/upstream-profiles-api.service';
+import { DomainProfilesApiService } from '../../services/api/domain-profiles-api.service';
 import {
+  API_KEY_KNOWN_SCOPES,
+  API_KEY_SCOPE_REGISTER_DOMAIN,
   API_KEY_SCOPE_REGISTER_UPSTREAM,
   type APIKeyV1,
   type CreateAPIKeyRequestV1,
+  type DomainProfileV1,
   type UpstreamProfileV1
 } from '../../models/api-v1.model';
 import { StitchIconComponent } from '../../ui/stitch-icon.component';
@@ -76,8 +80,9 @@ function datetimeLocalToIso(value: string): string | undefined {
             API keys
           </h2>
           <p class="text-sm text-stitch-on-surface-variant mt-3 leading-relaxed max-w-2xl">
-            Machine-to-machine credentials for external automation (e.g.
-            <span class="font-mono text-stitch-on-surface">register_upstream</span> on discovery groups). Admin only.
+            Machine-to-machine credentials for external automation (scopes
+            <span class="font-mono text-stitch-on-surface">{{ registerUpstreamScope }}</span>,
+            <span class="font-mono text-stitch-on-surface">{{ registerDomainScope }}</span>). Admin only.
           </p>
         </div>
         <button
@@ -123,6 +128,7 @@ function datetimeLocalToIso(value: string): string | undefined {
                 <th class="font-medium py-6 px-4 text-left">Scopes</th>
                 <th class="font-medium py-6 px-4 text-left">Discovery groups</th>
                 <th class="font-medium py-6 px-4 text-left">Upstream profiles</th>
+                <th class="font-medium py-6 px-4 text-left">Domain profiles</th>
                 <th class="font-medium py-6 px-4 text-left">Status</th>
                 <th class="font-medium py-6 px-4 text-left">Last used</th>
                 <th class="py-6 px-4"></th>
@@ -151,6 +157,9 @@ function datetimeLocalToIso(value: string): string | undefined {
                   </td>
                   <td class="py-6 px-4 align-middle text-xs">
                     {{ profileLabels(key.allowed_upstream_profile_ids) }}
+                  </td>
+                  <td class="py-6 px-4 align-middle text-xs">
+                    {{ domainProfileLabels(key.allowed_domain_profile_ids) }}
                   </td>
                   <td class="py-6 px-4 align-middle">
                     <span
@@ -234,12 +243,13 @@ function datetimeLocalToIso(value: string): string | undefined {
                   id="api-key-scopes"
                   class="input-technical mt-1 font-mono text-sm min-h-[4rem]"
                   formControlName="scopesText"
-                  placeholder="register_upstream"
+                  placeholder="register_upstream&#10;register_domain"
                   rows="2"
                 ></textarea>
                 <p class="text-xs text-stitch-on-surface-variant mt-1">
-                  Comma or newline separated. Today only
-                  <span class="font-mono">{{ registerUpstreamScope }}</span> has effect.
+                  Comma or newline separated. Known scopes:
+                  <span class="font-mono">{{ registerUpstreamScope }}</span>,
+                  <span class="font-mono">{{ registerDomainScope }}</span>.
                 </p>
                 @if (scopeWarning()) {
                   <p class="text-xs text-amber-700 mt-2">{{ scopeWarning() }}</p>
@@ -277,22 +287,53 @@ function datetimeLocalToIso(value: string): string | undefined {
                 }
               </fieldset>
 
-              @if (availableProfilesForSelection().length > 0) {
+              @if (hasRegisterUpstreamScope() && availableUpstreamProfilesForSelection().length > 0) {
                 <fieldset class="border-0 p-0 m-0 min-w-0">
                   <legend class="text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium mb-2">
                     Allowed upstream profiles (optional)
                   </legend>
                   <p class="text-xs text-stitch-on-surface-variant mb-2">
-                    Restrict profile-based register calls. Leave empty to allow any profile on the selected discovery groups.
+                    Restrict upstream profile register calls. Leave empty to allow any upstream profile on the selected
+                    discovery groups.
                   </p>
                   <div class="space-y-2 max-h-40 overflow-y-auto stitch-panel stitch-panel--dim p-3">
-                    @for (profile of availableProfilesForSelection(); track profile.id) {
+                    @for (profile of availableUpstreamProfilesForSelection(); track profile.id) {
                       <label class="flex items-start gap-2 text-sm cursor-pointer">
                         <input
                           type="checkbox"
                           class="checkbox checkbox-sm mt-0.5"
-                          [checked]="isProfileSelected(profile.id)"
-                          (change)="toggleProfile(profile.id, $event)"
+                          [checked]="isUpstreamProfileSelected(profile.id)"
+                          (change)="toggleUpstreamProfile(profile.id, $event)"
+                        />
+                        <span>
+                          <span class="font-medium">{{ profile.name || profile.id }}</span>
+                          <span class="text-stitch-on-surface-variant font-mono text-xs ml-1"
+                            >({{ discoveryLabels([profile.discovery_config_id ?? '']) }})</span
+                          >
+                        </span>
+                      </label>
+                    }
+                  </div>
+                </fieldset>
+              }
+
+              @if (hasRegisterDomainScope() && availableDomainProfilesForSelection().length > 0) {
+                <fieldset class="border-0 p-0 m-0 min-w-0">
+                  <legend class="text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium mb-2">
+                    Allowed domain profiles (optional)
+                  </legend>
+                  <p class="text-xs text-stitch-on-surface-variant mb-2">
+                    Restrict domain profile register calls. Leave empty to allow any domain profile on the selected
+                    discovery groups.
+                  </p>
+                  <div class="space-y-2 max-h-40 overflow-y-auto stitch-panel stitch-panel--dim p-3">
+                    @for (profile of availableDomainProfilesForSelection(); track profile.id) {
+                      <label class="flex items-start gap-2 text-sm cursor-pointer">
+                        <input
+                          type="checkbox"
+                          class="checkbox checkbox-sm mt-0.5"
+                          [checked]="isDomainProfileSelected(profile.id)"
+                          (change)="toggleDomainProfile(profile.id, $event)"
                         />
                         <span>
                           <span class="font-medium">{{ profile.name || profile.id }}</span>
@@ -369,17 +410,33 @@ function datetimeLocalToIso(value: string): string | undefined {
               <p class="text-xs text-emerald-700 mb-4">Copied to clipboard.</p>
             }
 
-            <div class="stitch-panel stitch-panel--dim p-4 mb-4">
-              <p class="stitch-panel-title mb-2">Example: register upstream</p>
-              <pre class="text-xs font-mono whitespace-pre-wrap break-all text-stitch-on-surface-variant leading-relaxed">{{ registerUpstreamCurl(reveal) }}</pre>
-            </div>
-
-            @if (reveal.profileIds.length > 0) {
-              <div class="stitch-panel stitch-panel--dim p-4 mb-6">
-                <p class="stitch-panel-title mb-2">Example: register via upstream profile</p>
-                <pre class="text-xs font-mono whitespace-pre-wrap break-all text-stitch-on-surface-variant leading-relaxed">{{ registerProfileCurl(reveal) }}</pre>
+            @if (revealHasRegisterUpstreamScope(reveal)) {
+              <div class="stitch-panel stitch-panel--dim p-4 mb-4">
+                <p class="stitch-panel-title mb-2">Example: register upstream</p>
+                <pre class="text-xs font-mono whitespace-pre-wrap break-all text-stitch-on-surface-variant leading-relaxed">{{ registerUpstreamCurl(reveal) }}</pre>
               </div>
-            } @else {
+            }
+
+            @if (revealHasRegisterUpstreamScope(reveal) && reveal.upstreamProfileIds.length > 0) {
+              <div class="stitch-panel stitch-panel--dim p-4 mb-4">
+                <p class="stitch-panel-title mb-2">Example: register via upstream profile</p>
+                <pre class="text-xs font-mono whitespace-pre-wrap break-all text-stitch-on-surface-variant leading-relaxed">{{ registerUpstreamProfileCurl(reveal) }}</pre>
+              </div>
+            }
+
+            @if (revealHasRegisterDomainScope(reveal)) {
+              <div class="stitch-panel stitch-panel--dim p-4 mb-4">
+                <p class="stitch-panel-title mb-2">Example: register domain</p>
+                <pre class="text-xs font-mono whitespace-pre-wrap break-all text-stitch-on-surface-variant leading-relaxed">{{ registerDomainCurl(reveal) }}</pre>
+              </div>
+            }
+
+            @if (revealHasRegisterDomainScope(reveal) && reveal.domainProfileIds.length > 0) {
+              <div class="stitch-panel stitch-panel--dim p-4 mb-6">
+                <p class="stitch-panel-title mb-2">Example: register via domain profile</p>
+                <pre class="text-xs font-mono whitespace-pre-wrap break-all text-stitch-on-surface-variant leading-relaxed">{{ registerDomainProfileCurl(reveal) }}</pre>
+              </div>
+            } @else if (!revealHasRegisterUpstreamScope(reveal)) {
               <div class="mb-6"></div>
             }
 
@@ -396,22 +453,32 @@ function datetimeLocalToIso(value: string): string | undefined {
 })
 export class ApiKeysAdminPageComponent {
   private readonly api = inject(DashboardApiService);
-  private readonly profilesApi = inject(UpstreamProfilesApiService);
+  private readonly upstreamProfilesApi = inject(UpstreamProfilesApiService);
+  private readonly domainProfilesApi = inject(DomainProfilesApiService);
   private readonly confirmService = inject(ConfirmService);
   private readonly fb = inject(FormBuilder);
 
   readonly registerUpstreamScope = API_KEY_SCOPE_REGISTER_UPSTREAM;
+  readonly registerDomainScope = API_KEY_SCOPE_REGISTER_DOMAIN;
 
   private readonly refreshVersion = signal(0);
+  private readonly scopesRevision = signal(0);
   readonly actionError = signal<string | null>(null);
   readonly createError = signal<string | null>(null);
   readonly discoverySelectionError = signal<string | null>(null);
   readonly createBusy = signal(false);
   readonly showCreateModal = signal(false);
-  readonly revealedSecret = signal<{ secret: string; discoveryIds: string[]; profileIds: string[] } | null>(null);
+  readonly revealedSecret = signal<{
+    secret: string;
+    discoveryIds: string[];
+    scopes: string[];
+    upstreamProfileIds: string[];
+    domainProfileIds: string[];
+  } | null>(null);
   readonly copyFeedback = signal(false);
   readonly selectedDiscoveryIds = signal<Set<string>>(new Set());
   readonly selectedUpstreamProfileIds = signal<Set<string>>(new Set());
+  readonly selectedDomainProfileIds = signal<Set<string>>(new Set());
 
   readonly dataResource = rxResource({
     params: () => this.refreshVersion(),
@@ -420,14 +487,19 @@ export class ApiKeysAdminPageComponent {
         switchMap(discovery => {
           const configs = normalizeDiscoveryRows(discovery);
           const ids = configs.map(c => c.id).filter((id): id is string => !!id);
-          const profiles$ =
+          const upstreamProfiles$ =
             ids.length === 0
               ? of([] as UpstreamProfileV1[])
-              : forkJoin(ids.map(id => this.profilesApi.listForDiscovery(id))).pipe(map(lists => lists.flat()));
+              : forkJoin(ids.map(id => this.upstreamProfilesApi.listForDiscovery(id))).pipe(map(lists => lists.flat()));
+          const domainProfiles$ =
+            ids.length === 0
+              ? of([] as DomainProfileV1[])
+              : forkJoin(ids.map(id => this.domainProfilesApi.listForDiscovery(id))).pipe(map(lists => lists.flat()));
           return forkJoin({
             keys: this.api.listApiKeys(),
             discovery: of(discovery),
-            profiles: profiles$
+            upstreamProfiles: upstreamProfiles$,
+            domainProfiles: domainProfiles$
           });
         })
       )
@@ -435,7 +507,8 @@ export class ApiKeysAdminPageComponent {
 
   readonly apiKeys = computed(() => this.dataResource.value()?.keys ?? []);
   readonly discoveryConfigs = computed(() => normalizeDiscoveryRows(this.dataResource.value()?.discovery));
-  readonly upstreamProfiles = computed(() => this.dataResource.value()?.profiles ?? []);
+  readonly upstreamProfiles = computed(() => this.dataResource.value()?.upstreamProfiles ?? []);
+  readonly domainProfiles = computed(() => this.dataResource.value()?.domainProfiles ?? []);
   readonly discoveryNameById = computed(() => {
     const map = new Map<string, string>();
     for (const cfg of this.discoveryConfigs()) {
@@ -445,7 +518,7 @@ export class ApiKeysAdminPageComponent {
     }
     return map;
   });
-  readonly profileNameById = computed(() => {
+  readonly upstreamProfileNameById = computed(() => {
     const map = new Map<string, string>();
     for (const profile of this.upstreamProfiles()) {
       if (profile.id) {
@@ -454,13 +527,48 @@ export class ApiKeysAdminPageComponent {
     }
     return map;
   });
+  readonly domainProfileNameById = computed(() => {
+    const map = new Map<string, string>();
+    for (const profile of this.domainProfiles()) {
+      if (profile.id) {
+        map.set(profile.id, profile.name?.trim() || profile.id);
+      }
+    }
+    return map;
+  });
 
-  readonly availableProfilesForSelection = computed(() => {
+  readonly keyForm = this.fb.nonNullable.group({
+    name: ['', [Validators.required]],
+    scopesText: [API_KEY_SCOPE_REGISTER_UPSTREAM, [Validators.required]],
+    expiresAt: ['']
+  });
+
+  readonly selectedScopes = computed(() => {
+    this.scopesRevision();
+    return parseScopesText(this.keyForm.controls.scopesText.value);
+  });
+
+  readonly hasRegisterUpstreamScope = computed(() =>
+    this.selectedScopes().includes(API_KEY_SCOPE_REGISTER_UPSTREAM)
+  );
+  readonly hasRegisterDomainScope = computed(() => this.selectedScopes().includes(API_KEY_SCOPE_REGISTER_DOMAIN));
+
+  readonly availableUpstreamProfilesForSelection = computed(() => {
     const selectedDiscovery = this.selectedDiscoveryIds();
     if (selectedDiscovery.size === 0) {
       return [];
     }
     return this.upstreamProfiles().filter(
+      p => p.id && p.discovery_config_id && selectedDiscovery.has(p.discovery_config_id)
+    );
+  });
+
+  readonly availableDomainProfilesForSelection = computed(() => {
+    const selectedDiscovery = this.selectedDiscoveryIds();
+    if (selectedDiscovery.size === 0) {
+      return [];
+    }
+    return this.domainProfiles().filter(
       p => p.id && p.discovery_config_id && selectedDiscovery.has(p.discovery_config_id)
     );
   });
@@ -475,22 +583,21 @@ export class ApiKeysAdminPageComponent {
     return e ? extractApiError(e, 'Failed to load API keys') : null;
   });
 
-  readonly keyForm = this.fb.nonNullable.group({
-    name: ['', [Validators.required]],
-    scopesText: [API_KEY_SCOPE_REGISTER_UPSTREAM, [Validators.required]],
-    expiresAt: ['']
-  });
-
   readonly scopeWarning = computed(() => {
+    this.scopesRevision();
     const scopes = parseScopesText(this.keyForm.controls.scopesText.value);
-    const unknown = scopes.filter(s => s !== API_KEY_SCOPE_REGISTER_UPSTREAM);
+    const known = new Set<string>(API_KEY_KNOWN_SCOPES);
+    const unknown = scopes.filter(s => !known.has(s));
     if (unknown.length === 0) {
       return null;
     }
-    return `Scopes other than ${API_KEY_SCOPE_REGISTER_UPSTREAM} are stored but have no effect on the API today.`;
+    return `Scopes other than ${API_KEY_SCOPE_REGISTER_UPSTREAM} and ${API_KEY_SCOPE_REGISTER_DOMAIN} are stored but have no effect on the API today.`;
   });
 
   constructor() {
+    this.keyForm.controls.scopesText.valueChanges.subscribe(() => {
+      this.scopesRevision.update(v => v + 1);
+    });
     this.load();
   }
 
@@ -530,8 +637,24 @@ export class ApiKeysAdminPageComponent {
     if (!ids?.length) {
       return '—';
     }
-    const map = this.profileNameById();
+    const map = this.upstreamProfileNameById();
     return ids.map(id => map.get(id) ?? id).join(', ');
+  }
+
+  domainProfileLabels(ids: string[] | undefined): string {
+    if (!ids?.length) {
+      return '—';
+    }
+    const map = this.domainProfileNameById();
+    return ids.map(id => map.get(id) ?? id).join(', ');
+  }
+
+  revealHasRegisterUpstreamScope(reveal: { scopes: string[] }): boolean {
+    return reveal.scopes.includes(API_KEY_SCOPE_REGISTER_UPSTREAM);
+  }
+
+  revealHasRegisterDomainScope(reveal: { scopes: string[] }): boolean {
+    return reveal.scopes.includes(API_KEY_SCOPE_REGISTER_DOMAIN);
   }
 
   openCreate(): void {
@@ -544,6 +667,7 @@ export class ApiKeysAdminPageComponent {
     });
     this.selectedDiscoveryIds.set(new Set());
     this.selectedUpstreamProfileIds.set(new Set());
+    this.selectedDomainProfileIds.set(new Set());
     this.showCreateModal.set(true);
   }
 
@@ -571,13 +695,24 @@ export class ApiKeysAdminPageComponent {
         next.add(id);
       } else {
         next.delete(id);
-        const profilesOnDiscovery = this.upstreamProfiles()
+        const upstreamOnDiscovery = this.upstreamProfiles()
+          .filter(p => p.discovery_config_id === id)
+          .map(p => p.id)
+          .filter((pid): pid is string => !!pid);
+        const domainOnDiscovery = this.domainProfiles()
           .filter(p => p.discovery_config_id === id)
           .map(p => p.id)
           .filter((pid): pid is string => !!pid);
         this.selectedUpstreamProfileIds.update(profileSet => {
           const nextProfiles = new Set(profileSet);
-          for (const pid of profilesOnDiscovery) {
+          for (const pid of upstreamOnDiscovery) {
+            nextProfiles.delete(pid);
+          }
+          return nextProfiles;
+        });
+        this.selectedDomainProfileIds.update(profileSet => {
+          const nextProfiles = new Set(profileSet);
+          for (const pid of domainOnDiscovery) {
             nextProfiles.delete(pid);
           }
           return nextProfiles;
@@ -588,19 +723,42 @@ export class ApiKeysAdminPageComponent {
     this.discoverySelectionError.set(null);
   }
 
-  isProfileSelected(id: string | undefined): boolean {
+  isUpstreamProfileSelected(id: string | undefined): boolean {
     if (!id) {
       return false;
     }
     return this.selectedUpstreamProfileIds().has(id);
   }
 
-  toggleProfile(id: string | undefined, event: Event): void {
+  toggleUpstreamProfile(id: string | undefined, event: Event): void {
     if (!id) {
       return;
     }
     const checked = (event.target as HTMLInputElement).checked;
     this.selectedUpstreamProfileIds.update(set => {
+      const next = new Set(set);
+      if (checked) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
+      return next;
+    });
+  }
+
+  isDomainProfileSelected(id: string | undefined): boolean {
+    if (!id) {
+      return false;
+    }
+    return this.selectedDomainProfileIds().has(id);
+  }
+
+  toggleDomainProfile(id: string | undefined, event: Event): void {
+    if (!id) {
+      return;
+    }
+    const checked = (event.target as HTMLInputElement).checked;
+    this.selectedDomainProfileIds.update(set => {
       const next = new Set(set);
       if (checked) {
         next.add(id);
@@ -628,13 +786,15 @@ export class ApiKeysAdminPageComponent {
       return;
     }
 
-    const profileIds = [...this.selectedUpstreamProfileIds()];
+    const upstreamProfileIds = this.hasRegisterUpstreamScope() ? [...this.selectedUpstreamProfileIds()] : [];
+    const domainProfileIds = this.hasRegisterDomainScope() ? [...this.selectedDomainProfileIds()] : [];
     const body: CreateAPIKeyRequestV1 = {
       name: value.name.trim(),
       scopes,
       allowed_discovery_config_ids: discoveryIds,
       expires_at: datetimeLocalToIso(value.expiresAt),
-      ...(profileIds.length > 0 ? { allowed_upstream_profile_ids: profileIds } : {})
+      ...(upstreamProfileIds.length > 0 ? { allowed_upstream_profile_ids: upstreamProfileIds } : {}),
+      ...(domainProfileIds.length > 0 ? { allowed_domain_profile_ids: domainProfileIds } : {})
     };
 
     this.createBusy.set(true);
@@ -647,7 +807,9 @@ export class ApiKeysAdminPageComponent {
         this.revealedSecret.set({
           secret: res.secret,
           discoveryIds,
-          profileIds
+          scopes,
+          upstreamProfileIds,
+          domainProfileIds
         });
         this.load();
       },
@@ -676,13 +838,31 @@ export class ApiKeysAdminPageComponent {
   -d '{"config_id":"@your-route-id","dial":"10.0.0.5:8080"}'`;
   }
 
-  registerProfileCurl(reveal: { secret: string; profileIds: string[] }): string {
+  registerUpstreamProfileCurl(reveal: { secret: string; upstreamProfileIds: string[] }): string {
     const base = environment.apiUrl.replace(/\/$/, '');
-    const profileId = reveal.profileIds[0] ?? '<upstream-profile-id>';
+    const profileId = reveal.upstreamProfileIds[0] ?? '<upstream-profile-id>';
     return `curl -X POST "${base}/upstream-profiles/${profileId}/register" \\
   -H "Authorization: ${reveal.secret}" \\
   -H "Content-Type: application/json" \\
   -d '{"private_ip":"10.0.0.5"}'`;
+  }
+
+  registerDomainCurl(reveal: { secret: string; discoveryIds: string[] }): string {
+    const base = environment.apiUrl.replace(/\/$/, '');
+    const discoveryId = reveal.discoveryIds[0] ?? '<discovery-config-id>';
+    return `curl -X POST "${base}/discovery/${discoveryId}/register-domain" \\
+  -H "Authorization: ${reveal.secret}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"config_id":"@your-route-id","domains":["app.example.com"]}'`;
+  }
+
+  registerDomainProfileCurl(reveal: { secret: string; domainProfileIds: string[] }): string {
+    const base = environment.apiUrl.replace(/\/$/, '');
+    const profileId = reveal.domainProfileIds[0] ?? '<domain-profile-id>';
+    return `curl -X POST "${base}/domain-profiles/${profileId}/register" \\
+  -H "Authorization: ${reveal.secret}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"domains":["app.example.com"]}'`;
   }
 
   acknowledgeSecret(): void {

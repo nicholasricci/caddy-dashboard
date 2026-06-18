@@ -5,6 +5,8 @@ import { map } from 'rxjs/operators';
 import { API_KEY_AUTHORIZATION } from '../../core/http-context.tokens';
 import {
   DiscoveryConfigV1,
+  RegisterDomainRequestV1,
+  RegisterDomainResponseV1,
   RegisterUpstreamRequestV1,
   RegisterUpstreamResponseV1,
   SnapshotRecordV1
@@ -53,6 +55,20 @@ export class DiscoveryApiService extends ApiBaseService {
   ): Observable<RegisterUpstreamResponseV1> {
     return this.http.post<RegisterUpstreamResponseV1>(
       `${this.base}/discovery/${encodeURIComponent(discoveryId)}/register-upstream`,
+      body,
+      {
+        context: new HttpContext().set(API_KEY_AUTHORIZATION, apiKeySecret.trim())
+      }
+    );
+  }
+
+  registerDomain(
+    discoveryId: string,
+    apiKeySecret: string,
+    body: RegisterDomainRequestV1
+  ): Observable<RegisterDomainResponseV1> {
+    return this.http.post<RegisterDomainResponseV1>(
+      `${this.base}/discovery/${encodeURIComponent(discoveryId)}/register-domain`,
       body,
       {
         context: new HttpContext().set(API_KEY_AUTHORIZATION, apiKeySecret.trim())

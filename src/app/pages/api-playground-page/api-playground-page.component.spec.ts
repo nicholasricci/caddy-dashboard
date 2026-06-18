@@ -2,11 +2,13 @@ import { provideZonelessChangeDetection } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
 import type {
+  RegisterDomainProfileResponseV1,
   RegisterUpstreamProfileResponseV1,
   RegisterUpstreamResponseV1
 } from '../../models/api-v1.model';
 import { DiscoveryApiService } from '../../services/api/discovery-api.service';
 import { UpstreamProfilesApiService } from '../../services/api/upstream-profiles-api.service';
+import { DomainProfilesApiService } from '../../services/api/domain-profiles-api.service';
 import { ConfirmService } from '../../ui/confirm.service';
 import { ApiPlaygroundPageComponent } from './api-playground-page.component';
 
@@ -14,7 +16,8 @@ describe('ApiPlaygroundPageComponent', () => {
   let fixture: ComponentFixture<ApiPlaygroundPageComponent>;
   let component: ApiPlaygroundPageComponent;
   let discoveryApi: jasmine.SpyObj<DiscoveryApiService>;
-  let profilesApi: jasmine.SpyObj<UpstreamProfilesApiService>;
+  let upstreamProfilesApi: jasmine.SpyObj<UpstreamProfilesApiService>;
+  let domainProfilesApi: jasmine.SpyObj<DomainProfilesApiService>;
   let confirmAsk: jasmine.Spy;
 
   const previewResponse: RegisterUpstreamResponseV1 = {
@@ -29,27 +32,46 @@ describe('ApiPlaygroundPageComponent', () => {
     upstream_profile_id: 'prof-1'
   };
 
+  const domainPreviewResponse: RegisterDomainProfileResponseV1 = {
+    changed: false,
+    dry_run: true,
+    domain_profile_id: 'dprof-1'
+  };
+
   beforeEach(async () => {
     confirmAsk = jasmine.createSpy('ask').and.resolveTo(true);
     discoveryApi = jasmine.createSpyObj<DiscoveryApiService>('DiscoveryApiService', [
       'listDiscovery',
-      'registerUpstream'
+      'registerUpstream',
+      'registerDomain'
     ]);
-    profilesApi = jasmine.createSpyObj<UpstreamProfilesApiService>('UpstreamProfilesApiService', [
+    upstreamProfilesApi = jasmine.createSpyObj<UpstreamProfilesApiService>('UpstreamProfilesApiService', [
+      'listForDiscovery',
+      'registerByProfile'
+    ]);
+    domainProfilesApi = jasmine.createSpyObj<DomainProfilesApiService>('DomainProfilesApiService', [
       'listForDiscovery',
       'registerByProfile'
     ]);
     discoveryApi.listDiscovery.and.returnValue(of([{ id: 'disc-1', name: 'prod-group' }]));
     discoveryApi.registerUpstream.and.returnValue(of(previewResponse));
-    profilesApi.listForDiscovery.and.returnValue(of([{ id: 'prof-1', name: 'web-stack', discovery_config_id: 'disc-1' }]));
-    profilesApi.registerByProfile.and.returnValue(of(profilePreviewResponse));
+    discoveryApi.registerDomain.and.returnValue(of({ changed: false, dry_run: true }));
+    upstreamProfilesApi.listForDiscovery.and.returnValue(
+      of([{ id: 'prof-1', name: 'web-stack', discovery_config_id: 'disc-1' }])
+    );
+    upstreamProfilesApi.registerByProfile.and.returnValue(of(profilePreviewResponse));
+    domainProfilesApi.listForDiscovery.and.returnValue(
+      of([{ id: 'dprof-1', name: 'tenant-routes', discovery_config_id: 'disc-1' }])
+    );
+    domainProfilesApi.registerByProfile.and.returnValue(of(domainPreviewResponse));
 
     await TestBed.configureTestingModule({
       imports: [ApiPlaygroundPageComponent],
       providers: [
         provideZonelessChangeDetection(),
         { provide: DiscoveryApiService, useValue: discoveryApi },
-        { provide: UpstreamProfilesApiService, useValue: profilesApi },
+        { provide: UpstreamProfilesApiService, useValue: upstreamProfilesApi },
+        { provide: DomainProfilesApiService, useValue: domainProfilesApi },
         { provide: ConfirmService, useValue: { ask: confirmAsk } }
       ]
     }).compileComponents();
@@ -130,8 +152,8 @@ describe('ApiPlaygroundPageComponent', () => {
     component.preview();
     await fixture.whenStable();
 
-    expect(profilesApi.listForDiscovery).not.toHaveBeenCalled();
-    expect(profilesApi.registerByProfile).toHaveBeenCalledWith(
+    expect(upstreamProfilesApi.listForDiscovery).not.toHaveBeenCalled();
+    expect(upstreamProfilesApi.registerByProfile).toHaveBeenCalledWith(
       'prof-pasted',
       'cdk_live_test',
       jasmine.objectContaining({ private_ip: '10.0.0.5', dry_run: true })
@@ -191,5 +213,46 @@ describe('ApiPlaygroundPageComponent', () => {
 
     expect(component.form.controls.profileId.value).toBe('');
     expect(component.form.controls.profilePrivateIp.value).toBe('');
+  });
+
+  it('domain preview calls registerDomain with dry_run true', async () => {
+    await fixture.whenStable();
+    component.form.patchValue({
+      operation: 'register_domain',
+      apiKeySecret: 'cdk_live_test',
+      domainDiscoveryId: 'disc-1',
+      domainConfigId: '@route-main',
+      domainList: 'app.example.com'
+    });
+    component.preview();
+    await fixture.whenStable();
+
+    expect(discoveryApi.registerDomain).toHaveBeenCalledWith(
+      'disc-1',
+      'cdk_live_test',
+      jasmine.objectContaining({
+        config_id: '@route-main',
+        domains: ['app.example.com'],
+        dry_run: true
+      })
+    );
+  });
+
+  it('domain profile preview calls registerByProfile with domains', async () => {
+    await fixture.whenStable();
+    component.form.patchValue({
+      operation: 'register_domain_by_profile',
+      apiKeySecret: 'cdk_live_test',
+      domainProfileId: 'dprof-1',
+      domainList: 'tenant.example.com'
+    });
+    component.preview();
+    await fixture.whenStable();
+
+    expect(domainProfilesApi.registerByProfile).toHaveBeenCalledWith(
+      'dprof-1',
+      'cdk_live_test',
+      jasmine.objectContaining({ domains: ['tenant.example.com'], dry_run: true })
+    );
   });
 });

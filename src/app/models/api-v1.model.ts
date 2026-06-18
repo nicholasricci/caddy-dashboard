@@ -268,8 +268,14 @@ export interface PropagateConfigResponseV1 {
   skipped?: string[];
 }
 
-/** Only scope with real effect today (`internal/models/api_key.go`). */
+/** M2M scopes with real effect on the API (`internal/models/api_key.go`). */
 export const API_KEY_SCOPE_REGISTER_UPSTREAM = 'register_upstream' as const;
+export const API_KEY_SCOPE_REGISTER_DOMAIN = 'register_domain' as const;
+
+export const API_KEY_KNOWN_SCOPES = [
+  API_KEY_SCOPE_REGISTER_UPSTREAM,
+  API_KEY_SCOPE_REGISTER_DOMAIN
+] as const;
 
 export interface APIKeyV1 {
   id?: string;
@@ -278,6 +284,7 @@ export interface APIKeyV1 {
   scopes?: string[];
   allowed_discovery_config_ids?: string[];
   allowed_upstream_profile_ids?: string[];
+  allowed_domain_profile_ids?: string[];
   expires_at?: string | null;
   revoked_at?: string | null;
   last_used_at?: string | null;
@@ -296,6 +303,7 @@ export interface CreateAPIKeyRequestV1 {
   scopes: string[];
   allowed_discovery_config_ids: string[];
   allowed_upstream_profile_ids?: string[];
+  allowed_domain_profile_ids?: string[];
   expires_at?: string;
 }
 
@@ -366,4 +374,75 @@ export interface RegisterUpstreamProfileResponseV1 {
   source_node_id?: string;
   targets?: RegisterUpstreamProfileTargetV1[];
   upstream_profile_id?: string;
+}
+
+export interface DnsChallengeRequestV1 {
+  provider?: string;
+  api_token?: string;
+}
+
+export interface DomainProfileBindingV1 {
+  config_id: string;
+  match_indexes?: number[];
+}
+
+export interface DomainProfileV1 {
+  id?: string;
+  name?: string;
+  description?: string;
+  discovery_config_id?: string;
+  bindings?: DomainProfileBindingV1[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+/** POST /discovery/{id}/domain-profiles, PUT /domain-profiles/{id} */
+export interface DomainProfileWriteRequestV1 {
+  name: string;
+  bindings: DomainProfileBindingV1[];
+  description?: string;
+}
+
+/** POST /api/v1/discovery/{id}/register-domain */
+export interface RegisterDomainRequestV1 {
+  config_id: string;
+  domains: string[];
+  match_indexes?: number[];
+  dns_challenge?: DnsChallengeRequestV1;
+  update_tls_policies?: boolean;
+  dry_run?: boolean;
+}
+
+export interface RegisterDomainResponseV1 {
+  changed?: boolean;
+  discovery_config_id?: string;
+  dry_run?: boolean;
+  mutate?: MutateDomainsResponseV1;
+  propagate?: PropagateConfigResponseV1;
+  source_node_id?: string;
+}
+
+/** POST /api/v1/domain-profiles/{id}/register */
+export interface RegisterDomainByProfileRequestV1 {
+  domains: string[];
+  dns_challenge?: DnsChallengeRequestV1;
+  update_tls_policies?: boolean;
+  dry_run?: boolean;
+}
+
+export interface RegisterDomainProfileTargetV1 {
+  config_id?: string;
+  domains?: string[];
+  match_indexes?: number[];
+}
+
+export interface RegisterDomainProfileResponseV1 {
+  changed?: boolean;
+  discovery_config_id?: string;
+  domain_profile_id?: string;
+  dry_run?: boolean;
+  mutate?: MutateDomainsResponseV1;
+  propagate?: PropagateConfigResponseV1;
+  source_node_id?: string;
+  targets?: RegisterDomainProfileTargetV1[];
 }

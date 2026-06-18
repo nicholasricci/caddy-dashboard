@@ -4,8 +4,14 @@ import { rxResource } from '@angular/core/rxjs-interop';
 import { of } from 'rxjs';
 import { DiscoveryApiService } from '../../services/api/discovery-api.service';
 import { UpstreamProfilesApiService } from '../../services/api/upstream-profiles-api.service';
+import { DomainProfilesApiService } from '../../services/api/domain-profiles-api.service';
 import {
+  API_KEY_SCOPE_REGISTER_DOMAIN,
   API_KEY_SCOPE_REGISTER_UPSTREAM,
+  type RegisterDomainByProfileRequestV1,
+  type RegisterDomainProfileResponseV1,
+  type RegisterDomainRequestV1,
+  type RegisterDomainResponseV1,
   type RegisterUpstreamByProfileRequestV1,
   type RegisterUpstreamProfileResponseV1,
   type RegisterUpstreamRequestV1,
@@ -16,23 +22,42 @@ import { StitchIconComponent } from '../../ui/stitch-icon.component';
 import { ConfirmService } from '../../ui/confirm.service';
 import { extractApiError } from '../../core/http-error.util';
 
-type PlaygroundOperation = 'register_upstream' | 'register_upstream_by_profile';
+type PlaygroundOperation =
+  | 'register_upstream'
+  | 'register_upstream_by_profile'
+  | 'register_domain'
+  | 'register_domain_by_profile';
 type TargetMode = 'dial' | 'private_ip';
 type ResultKind = 'preview' | 'applied';
 
 interface PlaygroundResult {
   kind: ResultKind;
-  response: RegisterUpstreamResponseV1 | RegisterUpstreamProfileResponseV1;
+  response:
+    | RegisterUpstreamResponseV1
+    | RegisterUpstreamProfileResponseV1
+    | RegisterDomainResponseV1
+    | RegisterDomainProfileResponseV1;
 }
 
 const PLAYGROUND_OPERATIONS: readonly {
   id: PlaygroundOperation;
   label: string;
 }[] = [
-  { id: 'register_upstream', label: 'register_upstream — POST /discovery/:id/register-upstream' },
+  {
+    id: 'register_upstream',
+    label: `register_upstream — POST /discovery/:id/register-upstream (requires ${API_KEY_SCOPE_REGISTER_UPSTREAM})`
+  },
   {
     id: 'register_upstream_by_profile',
-    label: 'register_upstream_by_profile — POST /upstream-profiles/:id/register'
+    label: `register_upstream_by_profile — POST /upstream-profiles/:id/register (requires ${API_KEY_SCOPE_REGISTER_UPSTREAM})`
+  },
+  {
+    id: 'register_domain',
+    label: `register_domain — POST /discovery/:id/register-domain (requires ${API_KEY_SCOPE_REGISTER_DOMAIN})`
+  },
+  {
+    id: 'register_domain_by_profile',
+    label: `register_domain_by_profile — POST /domain-profiles/:id/register (requires ${API_KEY_SCOPE_REGISTER_DOMAIN})`
   }
 ];
 
@@ -43,6 +68,27 @@ function parseOptionalPort(raw: string): number | undefined {
   }
   const port = Number.parseInt(trimmed, 10);
   return Number.isFinite(port) ? port : undefined;
+}
+
+function parseDomainsText(raw: string): string[] {
+  return [...new Set(raw.split(/[\n,]+/).map(s => s.trim()).filter(Boolean))];
+}
+
+function parseMatchIndexes(raw: string): number[] | null | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const parts = trimmed.split(/[,\s]+/).filter(Boolean);
+  const indexes: number[] = [];
+  for (const part of parts) {
+    const value = Number.parseInt(part, 10);
+    if (!Number.isFinite(value) || value < 0) {
+      return null;
+    }
+    indexes.push(value);
+  }
+  return indexes.length > 0 ? indexes : undefined;
 }
 
 @Component({
@@ -57,9 +103,10 @@ function parseOptionalPort(raw: string): number | undefined {
           API playground
         </h2>
         <p class="text-sm text-stitch-on-surface-variant mt-3 leading-relaxed max-w-2xl">
-          Test machine-to-machine endpoints with an API key secret (scope
-          <span class="font-mono text-stitch-on-surface">{{ registerUpstreamScope }}</span>). Each operation exposes only
-          the parameters its API endpoint expects.
+          Test machine-to-machine endpoints with an API key secret. Scopes:
+          <span class="font-mono text-stitch-on-surface">{{ registerUpstreamScope }}</span> (upstream register),
+          <span class="font-mono text-stitch-on-surface">{{ registerDomainScope }}</span> (domain register). Each operation
+          exposes only the parameters its API endpoint expects.
         </p>
       </header>
 
@@ -170,6 +217,143 @@ function parseOptionalPort(raw: string): number | undefined {
                 autocomplete="off"
               />
             </div>
+          } @else if (operation() === 'register_domain_by_profile') {
+            <div>
+              <label
+                class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium"
+                for="playground-domain-profile-discovery"
+                >Discovery group (optional)</label
+              >
+              <select
+                id="playground-domain-profile-discovery"
+                class="select select-bordered w-full mt-1 text-sm"
+                formControlName="domainProfileDiscoveryHelperId"
+              >
+                <option value="">— none — loads profile list when selected</option>
+                @for (cfg of discoveryConfigs(); track cfg.id) {
+                  <option [value]="cfg.id">{{ discoveryOptionLabel(cfg) }}</option>
+                }
+              </select>
+            </div>
+
+            <div>
+              <label
+                class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium"
+                for="playground-domain-profile-id"
+                >Profile ID</label
+              >
+              <input
+                id="playground-domain-profile-id"
+                class="input-technical mt-1 font-mono"
+                formControlName="domainProfileId"
+                placeholder="dprof-…"
+                autocomplete="off"
+              />
+            </div>
+
+            @if (form.controls.domainProfileDiscoveryHelperId.value) {
+              <div>
+                <label
+                  class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium"
+                  for="playground-domain-profile-picker"
+                  >Pick from list</label
+                >
+                <select
+                  id="playground-domain-profile-picker"
+                  class="select select-bordered w-full mt-1 text-sm"
+                  formControlName="domainProfilePicker"
+                  (change)="applyDomainProfilePick()"
+                >
+                  <option value="">Select a profile</option>
+                  @for (profile of domainProfilesForDiscovery(); track profile.id) {
+                    <option [value]="profile.id">{{ profileOptionLabel(profile) }}</option>
+                  }
+                </select>
+                @if (domainProfilesLoading()) {
+                  <p class="text-xs text-stitch-on-surface-variant mt-1">Loading profiles…</p>
+                } @else if (domainProfilesForDiscovery().length === 0) {
+                  <p class="text-xs text-stitch-on-surface-variant mt-1">No domain profiles for this discovery group.</p>
+                }
+              </div>
+            }
+
+            <div>
+              <label
+                class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium"
+                for="playground-domain-profile-domains"
+                >domains</label
+              >
+              <textarea
+                id="playground-domain-profile-domains"
+                class="input-technical mt-1 font-mono text-sm min-h-[4rem]"
+                formControlName="domainList"
+                placeholder="app.example.com&#10;*.apps.example.com"
+                rows="3"
+              ></textarea>
+            </div>
+          } @else if (operation() === 'register_domain') {
+            <div>
+              <label
+                class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium"
+                for="playground-domain-discovery"
+                >Discovery group</label
+              >
+              <select
+                id="playground-domain-discovery"
+                class="select select-bordered w-full mt-1 text-sm"
+                formControlName="domainDiscoveryId"
+              >
+                <option value="" disabled>Select a discovery rule</option>
+                @for (cfg of discoveryConfigs(); track cfg.id) {
+                  <option [value]="cfg.id">{{ discoveryOptionLabel(cfg) }}</option>
+                }
+              </select>
+            </div>
+
+            <div>
+              <label
+                class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium"
+                for="playground-domain-config-id"
+                >config_id</label
+              >
+              <input
+                id="playground-domain-config-id"
+                class="input-technical mt-1 font-mono"
+                formControlName="domainConfigId"
+                placeholder="@your-route-id"
+                autocomplete="off"
+              />
+            </div>
+
+            <div>
+              <label
+                class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium"
+                for="playground-domain-list"
+                >domains</label
+              >
+              <textarea
+                id="playground-domain-list"
+                class="input-technical mt-1 font-mono text-sm min-h-[4rem]"
+                formControlName="domainList"
+                placeholder="app.example.com"
+                rows="3"
+              ></textarea>
+            </div>
+
+            <div>
+              <label
+                class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium"
+                for="playground-domain-match-indexes"
+                >match_indexes (optional)</label
+              >
+              <input
+                id="playground-domain-match-indexes"
+                class="input-technical mt-1 font-mono"
+                formControlName="domainMatchIndexes"
+                placeholder="0"
+                autocomplete="off"
+              />
+            </div>
           } @else {
             <div>
               <label
@@ -259,6 +443,36 @@ function parseOptionalPort(raw: string): number | undefined {
               }
             </fieldset>
           }
+
+          @if (operation() === 'register_domain' || operation() === 'register_domain_by_profile') {
+            <details class="mt-4 rounded-sm border border-stitch-ghost p-4">
+              <summary class="text-sm font-medium text-stitch-on-surface cursor-pointer">Advanced TLS / DNS (optional)</summary>
+              <div class="space-y-4 mt-4">
+                <label class="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="checkbox" class="checkbox checkbox-sm" formControlName="updateTlsPolicies" />
+                  update_tls_policies
+                </label>
+                <div>
+                  <label class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium" for="playground-dns-provider"
+                    >dns_challenge.provider</label
+                  >
+                  <input id="playground-dns-provider" class="input-technical mt-1 font-mono" formControlName="dnsProvider" autocomplete="off" />
+                </div>
+                <div>
+                  <label class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium" for="playground-dns-token"
+                    >dns_challenge.api_token</label
+                  >
+                  <input
+                    id="playground-dns-token"
+                    class="input-technical mt-1 font-mono"
+                    type="password"
+                    formControlName="dnsApiToken"
+                    autocomplete="off"
+                  />
+                </div>
+              </div>
+            </details>
+          }
         </form>
 
         @if (formError()) {
@@ -324,12 +538,14 @@ function parseOptionalPort(raw: string): number | undefined {
 })
 export class ApiPlaygroundPageComponent {
   private readonly discoveryApi = inject(DiscoveryApiService);
-  private readonly profilesApi = inject(UpstreamProfilesApiService);
+  private readonly upstreamProfilesApi = inject(UpstreamProfilesApiService);
+  private readonly domainProfilesApi = inject(DomainProfilesApiService);
   private readonly confirmService = inject(ConfirmService);
   private readonly fb = inject(FormBuilder);
 
   readonly operations = PLAYGROUND_OPERATIONS;
   readonly registerUpstreamScope = API_KEY_SCOPE_REGISTER_UPSTREAM;
+  readonly registerDomainScope = API_KEY_SCOPE_REGISTER_DOMAIN;
 
   readonly busy = signal(false);
   readonly pendingAction = signal<'preview' | 'send' | null>(null);
@@ -339,6 +555,7 @@ export class ApiPlaygroundPageComponent {
   readonly previewFingerprint = signal<string | null>(null);
   private readonly formRevision = signal(0);
   private readonly profileDiscoveryId = signal('');
+  private readonly domainProfileDiscoveryId = signal('');
 
   readonly discoveryResource = rxResource({
     stream: () => this.discoveryApi.listDiscovery()
@@ -351,13 +568,26 @@ export class ApiPlaygroundPageComponent {
       if (!discoveryId) {
         return of([]);
       }
-      return this.profilesApi.listForDiscovery(discoveryId);
+      return this.upstreamProfilesApi.listForDiscovery(discoveryId);
+    }
+  });
+
+  readonly domainProfilesResource = rxResource({
+    params: () => ({ discoveryId: this.domainProfileDiscoveryId() }),
+    stream: ({ params }) => {
+      const discoveryId = params.discoveryId.trim();
+      if (!discoveryId) {
+        return of([]);
+      }
+      return this.domainProfilesApi.listForDiscovery(discoveryId);
     }
   });
 
   readonly discoveryConfigs = computed(() => normalizeDiscoveryRows(this.discoveryResource.value()));
   readonly profilesForDiscovery = computed(() => this.profilesResource.value() ?? []);
   readonly profilesLoading = computed(() => this.profilesResource.isLoading());
+  readonly domainProfilesForDiscovery = computed(() => this.domainProfilesResource.value() ?? []);
+  readonly domainProfilesLoading = computed(() => this.domainProfilesResource.isLoading());
 
   readonly form = this.fb.nonNullable.group({
     operation: ['register_upstream' as PlaygroundOperation],
@@ -366,6 +596,16 @@ export class ApiPlaygroundPageComponent {
     profileId: [''],
     profilePicker: [''],
     profilePrivateIp: [''],
+    domainProfileDiscoveryHelperId: [''],
+    domainProfileId: [''],
+    domainProfilePicker: [''],
+    domainDiscoveryId: [''],
+    domainConfigId: [''],
+    domainList: [''],
+    domainMatchIndexes: [''],
+    updateTlsPolicies: [false],
+    dnsProvider: [''],
+    dnsApiToken: [''],
     upstreamDiscoveryId: [''],
     configId: [''],
     targetMode: ['dial' as TargetMode],
@@ -423,6 +663,11 @@ export class ApiPlaygroundPageComponent {
       this.form.controls.profilePicker.setValue('', { emitEvent: false });
       this.profilesResource.reload();
     });
+    this.form.controls.domainProfileDiscoveryHelperId.valueChanges.subscribe(discoveryId => {
+      this.domainProfileDiscoveryId.set(discoveryId ?? '');
+      this.form.controls.domainProfilePicker.setValue('', { emitEvent: false });
+      this.domainProfilesResource.reload();
+    });
     this.syncValidators();
   }
 
@@ -430,6 +675,13 @@ export class ApiPlaygroundPageComponent {
     const picked = this.form.controls.profilePicker.value.trim();
     if (picked) {
       this.form.controls.profileId.setValue(picked);
+    }
+  }
+
+  applyDomainProfilePick(): void {
+    const picked = this.form.controls.domainProfilePicker.value.trim();
+    if (picked) {
+      this.form.controls.domainProfileId.setValue(picked);
     }
   }
 
@@ -454,14 +706,23 @@ export class ApiPlaygroundPageComponent {
   }
 
   async send(): Promise<void> {
+    const op = this.operation();
     const title =
-      this.operation() === 'register_upstream_by_profile'
-        ? 'Send profile register?'
-        : 'Send register-upstream?';
+      op === 'register_upstream_by_profile'
+        ? 'Send upstream profile register?'
+        : op === 'register_domain_by_profile'
+          ? 'Send domain profile register?'
+          : op === 'register_domain'
+            ? 'Send register-domain?'
+            : 'Send register-upstream?';
     const message =
-      this.operation() === 'register_upstream_by_profile'
+      op === 'register_upstream_by_profile'
         ? 'This applies upstream dials for all bindings in the profile on live Caddy config (not a dry-run). Continue?'
-        : 'This applies the upstream registration to live Caddy config on the discovery group (not a dry-run). Continue?';
+        : op === 'register_domain_by_profile'
+          ? 'This applies domains for all bindings in the profile on live Caddy config (not a dry-run). Continue?'
+          : op === 'register_domain'
+            ? 'This applies domain registration to live Caddy config on the discovery group (not a dry-run). Continue?'
+            : 'This applies the upstream registration to live Caddy config on the discovery group (not a dry-run). Continue?';
     const confirmed = await this.confirmService.ask({
       title,
       message,
@@ -488,7 +749,13 @@ export class ApiPlaygroundPageComponent {
     this.busy.set(true);
     this.pendingAction.set(action);
 
-    const onSuccess = (res: RegisterUpstreamResponseV1 | RegisterUpstreamProfileResponseV1) => {
+    const onSuccess = (
+      res:
+        | RegisterUpstreamResponseV1
+        | RegisterUpstreamProfileResponseV1
+        | RegisterDomainResponseV1
+        | RegisterDomainProfileResponseV1
+    ) => {
       this.busy.set(false);
       this.pendingAction.set(null);
       const kind: ResultKind = dryRun ? 'preview' : 'applied';
@@ -511,9 +778,21 @@ export class ApiPlaygroundPageComponent {
         next: onSuccess,
         error: onError
       });
+    } else if (built.kind === 'register_upstream_by_profile') {
+      const { profileId, apiKeySecret, body } = built;
+      this.upstreamProfilesApi.registerByProfile(profileId, apiKeySecret, body).subscribe({
+        next: onSuccess,
+        error: onError
+      });
+    } else if (built.kind === 'register_domain') {
+      const { discoveryId, apiKeySecret, body } = built;
+      this.discoveryApi.registerDomain(discoveryId, apiKeySecret, body).subscribe({
+        next: onSuccess,
+        error: onError
+      });
     } else {
       const { profileId, apiKeySecret, body } = built;
-      this.profilesApi.registerByProfile(profileId, apiKeySecret, body).subscribe({
+      this.domainProfilesApi.registerByProfile(profileId, apiKeySecret, body).subscribe({
         next: onSuccess,
         error: onError
       });
@@ -529,6 +808,64 @@ export class ApiPlaygroundPageComponent {
           targetMode: 'dial',
           dial: '',
           upstreamPrivateIp: '',
+          port: '',
+          domainProfileDiscoveryHelperId: '',
+          domainProfileId: '',
+          domainProfilePicker: '',
+          domainDiscoveryId: '',
+          domainConfigId: '',
+          domainList: '',
+          domainMatchIndexes: '',
+          updateTlsPolicies: false,
+          dnsProvider: '',
+          dnsApiToken: ''
+        },
+        { emitEvent: false }
+      );
+      this.domainProfileDiscoveryId.set('');
+      return;
+    }
+
+    if (active === 'register_domain_by_profile') {
+      this.profileDiscoveryId.set('');
+      this.form.patchValue(
+        {
+          profileDiscoveryHelperId: '',
+          profileId: '',
+          profilePicker: '',
+          profilePrivateIp: '',
+          upstreamDiscoveryId: '',
+          configId: '',
+          targetMode: 'dial',
+          dial: '',
+          upstreamPrivateIp: '',
+          port: '',
+          domainDiscoveryId: '',
+          domainConfigId: '',
+          domainMatchIndexes: ''
+        },
+        { emitEvent: false }
+      );
+      return;
+    }
+
+    if (active === 'register_domain') {
+      this.profileDiscoveryId.set('');
+      this.domainProfileDiscoveryId.set('');
+      this.form.patchValue(
+        {
+          profileDiscoveryHelperId: '',
+          profileId: '',
+          profilePicker: '',
+          profilePrivateIp: '',
+          domainProfileDiscoveryHelperId: '',
+          domainProfileId: '',
+          domainProfilePicker: '',
+          upstreamDiscoveryId: '',
+          configId: '',
+          targetMode: 'dial',
+          dial: '',
+          upstreamPrivateIp: '',
           port: ''
         },
         { emitEvent: false }
@@ -537,15 +874,44 @@ export class ApiPlaygroundPageComponent {
     }
 
     this.profileDiscoveryId.set('');
+    this.domainProfileDiscoveryId.set('');
     this.form.patchValue(
       {
         profileDiscoveryHelperId: '',
         profileId: '',
         profilePicker: '',
-        profilePrivateIp: ''
+        profilePrivateIp: '',
+        domainProfileDiscoveryHelperId: '',
+        domainProfileId: '',
+        domainProfilePicker: '',
+        domainDiscoveryId: '',
+        domainConfigId: '',
+        domainList: '',
+        domainMatchIndexes: '',
+        updateTlsPolicies: false,
+        dnsProvider: '',
+        dnsApiToken: ''
       },
       { emitEvent: false }
     );
+  }
+
+  private appendDomainAdvancedFields<T extends RegisterDomainRequestV1 | RegisterDomainByProfileRequestV1>(
+    body: T,
+    v: ReturnType<typeof this.form.getRawValue>
+  ): { ok: true; body: T } | { ok: false; error: string } {
+    if (v.updateTlsPolicies) {
+      body.update_tls_policies = true;
+    }
+    const provider = v.dnsProvider.trim();
+    const apiToken = v.dnsApiToken.trim();
+    if (provider || apiToken) {
+      body.dns_challenge = {
+        ...(provider ? { provider } : {}),
+        ...(apiToken ? { api_token: apiToken } : {})
+      };
+    }
+    return { ok: true, body };
   }
 
   private formValidForOperation(): boolean {
@@ -555,6 +921,16 @@ export class ApiPlaygroundPageComponent {
     }
     if (v.operation === 'register_upstream_by_profile') {
       return !!v.profileId.trim() && !!v.profilePrivateIp.trim();
+    }
+    if (v.operation === 'register_domain_by_profile') {
+      return !!v.domainProfileId.trim() && parseDomainsText(v.domainList).length > 0;
+    }
+    if (v.operation === 'register_domain') {
+      return (
+        !!v.domainDiscoveryId.trim() &&
+        !!v.domainConfigId.trim() &&
+        parseDomainsText(v.domainList).length > 0
+      );
     }
     if (!v.upstreamDiscoveryId.trim() || !v.configId.trim()) {
       return false;
@@ -566,23 +942,50 @@ export class ApiPlaygroundPageComponent {
   }
 
   private syncValidators(): void {
-    const isProfile = this.operation() === 'register_upstream_by_profile';
-    const { profileId, profilePrivateIp, upstreamDiscoveryId, configId, upstreamPrivateIp } = this.form.controls;
+    const op = this.operation();
+    const {
+      profileId,
+      profilePrivateIp,
+      domainProfileId,
+      domainDiscoveryId,
+      domainConfigId,
+      upstreamDiscoveryId,
+      configId,
+      upstreamPrivateIp
+    } = this.form.controls;
 
-    if (isProfile) {
+    profileId.clearValidators();
+    profilePrivateIp.clearValidators();
+    domainProfileId.clearValidators();
+    domainDiscoveryId.clearValidators();
+    domainConfigId.clearValidators();
+    upstreamDiscoveryId.clearValidators();
+    configId.clearValidators();
+    upstreamPrivateIp.clearValidators();
+
+    if (op === 'register_upstream_by_profile') {
       profileId.setValidators([Validators.required]);
       profilePrivateIp.setValidators([Validators.required]);
-      upstreamDiscoveryId.clearValidators();
-      configId.clearValidators();
-      upstreamPrivateIp.clearValidators();
+    } else if (op === 'register_domain_by_profile') {
+      domainProfileId.setValidators([Validators.required]);
+    } else if (op === 'register_domain') {
+      domainDiscoveryId.setValidators([Validators.required]);
+      domainConfigId.setValidators([Validators.required]);
     } else {
-      profileId.clearValidators();
-      profilePrivateIp.clearValidators();
       upstreamDiscoveryId.setValidators([Validators.required]);
       configId.setValidators([Validators.required]);
     }
 
-    for (const control of [profileId, profilePrivateIp, upstreamDiscoveryId, configId, upstreamPrivateIp]) {
+    for (const control of [
+      profileId,
+      profilePrivateIp,
+      domainProfileId,
+      domainDiscoveryId,
+      domainConfigId,
+      upstreamDiscoveryId,
+      configId,
+      upstreamPrivateIp
+    ]) {
       control.updateValueAndValidity({ emitEvent: false });
     }
   }
@@ -595,6 +998,30 @@ export class ApiPlaygroundPageComponent {
         apiKeySecret: v.apiKeySecret.trim(),
         profileId: v.profileId.trim(),
         profilePrivateIp: v.profilePrivateIp.trim()
+      });
+    }
+    if (v.operation === 'register_domain_by_profile') {
+      return JSON.stringify({
+        operation: v.operation,
+        apiKeySecret: v.apiKeySecret.trim(),
+        domainProfileId: v.domainProfileId.trim(),
+        domainList: v.domainList.trim(),
+        updateTlsPolicies: v.updateTlsPolicies,
+        dnsProvider: v.dnsProvider.trim(),
+        dnsApiToken: v.dnsApiToken.trim()
+      });
+    }
+    if (v.operation === 'register_domain') {
+      return JSON.stringify({
+        operation: v.operation,
+        apiKeySecret: v.apiKeySecret.trim(),
+        domainDiscoveryId: v.domainDiscoveryId.trim(),
+        domainConfigId: v.domainConfigId.trim(),
+        domainList: v.domainList.trim(),
+        domainMatchIndexes: v.domainMatchIndexes.trim(),
+        updateTlsPolicies: v.updateTlsPolicies,
+        dnsProvider: v.dnsProvider.trim(),
+        dnsApiToken: v.dnsApiToken.trim()
       });
     }
     return JSON.stringify({
@@ -618,6 +1045,14 @@ export class ApiPlaygroundPageComponent {
         apiKeySecret: string;
         body: RegisterUpstreamByProfileRequestV1;
       }
+    | { ok: true; kind: 'register_domain'; discoveryId: string; apiKeySecret: string; body: RegisterDomainRequestV1 }
+    | {
+        ok: true;
+        kind: 'register_domain_by_profile';
+        profileId: string;
+        apiKeySecret: string;
+        body: RegisterDomainByProfileRequestV1;
+      }
     | { ok: false; error: string } {
     if (!this.formValidForOperation()) {
       return { ok: false, error: 'Fill in all required fields.' };
@@ -639,6 +1074,48 @@ export class ApiPlaygroundPageComponent {
         apiKeySecret,
         body: { private_ip: privateIp, dry_run: dryRun }
       };
+    }
+
+    if (v.operation === 'register_domain_by_profile') {
+      const profileId = v.domainProfileId.trim();
+      const domains = parseDomainsText(v.domainList);
+      if (!profileId || domains.length === 0) {
+        return { ok: false, error: 'API key, profile ID, and at least one domain are required.' };
+      }
+      let body: RegisterDomainByProfileRequestV1 = { domains, dry_run: dryRun };
+      const advanced = this.appendDomainAdvancedFields(body, v);
+      if (!advanced.ok) {
+        return advanced;
+      }
+      body = advanced.body;
+      return { ok: true, kind: 'register_domain_by_profile', profileId, apiKeySecret, body };
+    }
+
+    if (v.operation === 'register_domain') {
+      const discoveryId = v.domainDiscoveryId.trim();
+      const configId = v.domainConfigId.trim();
+      const domains = parseDomainsText(v.domainList);
+      if (!discoveryId || !configId || domains.length === 0) {
+        return { ok: false, error: 'API key, discovery group, config_id, and at least one domain are required.' };
+      }
+      const parsedIndexes = parseMatchIndexes(v.domainMatchIndexes);
+      if (v.domainMatchIndexes.trim() && parsedIndexes === null) {
+        return { ok: false, error: 'match_indexes must be comma-separated non-negative integers.' };
+      }
+      let body: RegisterDomainRequestV1 = {
+        config_id: configId,
+        domains,
+        dry_run: dryRun
+      };
+      if (parsedIndexes?.length) {
+        body.match_indexes = parsedIndexes;
+      }
+      const advanced = this.appendDomainAdvancedFields(body, v);
+      if (!advanced.ok) {
+        return advanced;
+      }
+      body = advanced.body;
+      return { ok: true, kind: 'register_domain', discoveryId, apiKeySecret, body };
     }
 
     const discoveryId = v.upstreamDiscoveryId.trim();
