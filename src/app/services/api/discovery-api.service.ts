@@ -1,7 +1,14 @@
+import { HttpContext } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
-import { DiscoveryConfigV1, SnapshotRecordV1 } from '../../models/api-v1.model';
+import { API_KEY_AUTHORIZATION } from '../../core/http-context.tokens';
+import {
+  DiscoveryConfigV1,
+  RegisterUpstreamRequestV1,
+  RegisterUpstreamResponseV1,
+  SnapshotRecordV1
+} from '../../models/api-v1.model';
 import { normalizeSnapshotRows } from '../../core/api-list-normalize.util';
 import { ApiBaseService } from './api-base.service';
 
@@ -37,5 +44,19 @@ export class DiscoveryApiService extends ApiBaseService {
     return this.http
       .get<unknown>(`${this.base}/discovery/${encodeURIComponent(id)}/snapshots`)
       .pipe(map(rows => normalizeSnapshotRows(rows)));
+  }
+
+  registerUpstream(
+    discoveryId: string,
+    apiKeySecret: string,
+    body: RegisterUpstreamRequestV1
+  ): Observable<RegisterUpstreamResponseV1> {
+    return this.http.post<RegisterUpstreamResponseV1>(
+      `${this.base}/discovery/${encodeURIComponent(discoveryId)}/register-upstream`,
+      body,
+      {
+        context: new HttpContext().set(API_KEY_AUTHORIZATION, apiKeySecret.trim())
+      }
+    );
   }
 }

@@ -90,6 +90,9 @@ function parseAddressesText(d: DiscoveryConfigV1): string {
           <app-stitch-icon name="sparkles" size="xs" class="text-stitch-on-surface-variant" />
           {{ config().name || config().id }}
         </h3>
+        @if (config().id) {
+          <p class="text-xs font-mono text-stitch-on-surface-variant mt-1 break-all">id: {{ config().id }}</p>
+        }
         <p class="text-xs font-mono text-stitch-on-surface-variant mt-2">
           {{ config().method }}
           @if (config().method !== 'static_ip' && config().region) {

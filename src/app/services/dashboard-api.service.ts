@@ -1,6 +1,8 @@
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import {
+  APIKeyCreateResponseV1,
+  APIKeyV1,
   AuditLogListResultV1,
   ApplyConfigRequestV1,
   BackfillSnapshotsResponseV1,
@@ -8,6 +10,7 @@ import {
   CaddyConfigIdsResponseV1,
   CaddyConfigUpstreamsResponseV1,
   CaddyNodeV1,
+  CreateAPIKeyRequestV1,
   CreateNodeRequestV1,
   CreateUserRequestV1,
   DiscoveryConfigV1,
@@ -22,6 +25,7 @@ import {
   UserV1
 } from '../models/api-v1.model';
 import { AdminApiService } from './api/admin-api.service';
+import { ApiKeysApiService } from './api/api-keys-api.service';
 import { AuditApiService } from './api/audit-api.service';
 import { DiscoveryApiService } from './api/discovery-api.service';
 import { NodesApiService } from './api/nodes-api.service';
@@ -42,6 +46,7 @@ export class DashboardApiService {
   private readonly discovery = inject(DiscoveryApiService);
   private readonly users = inject(UsersApiService);
   private readonly admin = inject(AdminApiService);
+  private readonly apiKeys = inject(ApiKeysApiService);
 
   health(): Observable<unknown> {
     return this.system.health();
@@ -173,5 +178,21 @@ export class DashboardApiService {
 
   deleteUser(id: string): Observable<void> {
     return this.users.deleteUser(id);
+  }
+
+  listApiKeys(): Observable<APIKeyV1[]> {
+    return this.apiKeys.listApiKeys();
+  }
+
+  createApiKey(body: CreateAPIKeyRequestV1): Observable<APIKeyCreateResponseV1> {
+    return this.apiKeys.createApiKey(body);
+  }
+
+  revokeApiKey(id: string): Observable<void> {
+    return this.apiKeys.revokeApiKey(id);
+  }
+
+  deleteApiKey(id: string): Observable<void> {
+    return this.apiKeys.deleteApiKey(id);
   }
 }

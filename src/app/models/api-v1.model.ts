@@ -267,3 +267,57 @@ export interface PropagateConfigResponseV1 {
   applied_to?: string[];
   skipped?: string[];
 }
+
+/** Only scope with real effect today (`internal/models/api_key.go`). */
+export const API_KEY_SCOPE_REGISTER_UPSTREAM = 'register_upstream' as const;
+
+export interface APIKeyV1 {
+  id?: string;
+  name?: string;
+  key_prefix?: string;
+  scopes?: string[];
+  allowed_discovery_config_ids?: string[];
+  expires_at?: string | null;
+  revoked_at?: string | null;
+  last_used_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/** GET /api/v1/api-keys */
+export interface APIKeyListResponseV1 {
+  items: APIKeyV1[];
+}
+
+/** POST /api/v1/api-keys */
+export interface CreateAPIKeyRequestV1 {
+  name: string;
+  scopes: string[];
+  allowed_discovery_config_ids: string[];
+  expires_at?: string;
+}
+
+/** POST /api/v1/api-keys — 201 */
+export interface APIKeyCreateResponseV1 {
+  api_key: APIKeyV1;
+  secret: string;
+}
+
+/** POST /api/v1/discovery/{id}/register-upstream */
+export interface RegisterUpstreamRequestV1 {
+  config_id: string;
+  dial?: string;
+  private_ip?: string;
+  port?: number;
+  dry_run?: boolean;
+}
+
+export interface RegisterUpstreamResponseV1 {
+  changed?: boolean;
+  dial?: string;
+  discovery_config_id?: string;
+  dry_run?: boolean;
+  mutate?: MutateUpstreamsResponseV1;
+  propagate?: PropagateConfigResponseV1;
+  source_node_id?: string;
+}

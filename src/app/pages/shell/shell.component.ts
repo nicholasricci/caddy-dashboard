@@ -67,6 +67,22 @@ import { StitchIconComponent } from '../../ui/stitch-icon.component';
               <app-stitch-icon name="audit" />
               <span>Audit log</span>
             </a>
+            <a
+              routerLink="/admin/api-keys"
+              routerLinkActive="bg-stitch-surface text-stitch-on-surface font-medium border-l-2 border-stitch-primary pl-[calc(0.75rem-2px)]"
+              class="flex items-center gap-3 px-3 py-3 text-sm text-stitch-on-surface-variant hover:bg-stitch-surface-container/50 rounded-sm transition-colors border-l-2 border-transparent"
+            >
+              <app-stitch-icon name="lock" />
+              <span>API keys</span>
+            </a>
+            <a
+              routerLink="/admin/api-playground"
+              routerLinkActive="bg-stitch-surface text-stitch-on-surface font-medium border-l-2 border-stitch-primary pl-[calc(0.75rem-2px)]"
+              class="flex items-center gap-3 px-3 py-3 text-sm text-stitch-on-surface-variant hover:bg-stitch-surface-container/50 rounded-sm transition-colors border-l-2 border-transparent"
+            >
+              <app-stitch-icon name="sparkles" />
+              <span>API playground</span>
+            </a>
           }
         </nav>
 

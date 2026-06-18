@@ -36,6 +36,18 @@ export const routes: Routes = [
         path: 'admin/audit',
         loadComponent: () => import('./pages/audit-page/audit-page.component').then(m => m.AuditPageComponent),
         canActivate: [adminGuard]
+      },
+      {
+        path: 'admin/api-keys',
+        loadComponent: () =>
+          import('./pages/api-keys-admin-page/api-keys-admin-page.component').then(m => m.ApiKeysAdminPageComponent),
+        canActivate: [adminGuard]
+      },
+      {
+        path: 'admin/api-playground',
+        loadComponent: () =>
+          import('./pages/api-playground-page/api-playground-page.component').then(m => m.ApiPlaygroundPageComponent),
+        canActivate: [adminGuard]
       }
     ]
   },

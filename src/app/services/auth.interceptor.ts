@@ -3,6 +3,7 @@ import { inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { catchError, switchMap, throwError } from 'rxjs';
 import { environment } from '../../environments/environment';
+import { API_KEY_AUTHORIZATION } from '../core/http-context.tokens';
 import { AuthService } from './auth.service';
 
 function isAuthPublicUrl(url: string): boolean {
@@ -16,6 +17,11 @@ function isAuthPublicUrl(url: string): boolean {
 }
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
+  const apiKeyAuth = req.context.get(API_KEY_AUTHORIZATION);
+  if (apiKeyAuth) {
+    return next(req.clone({ setHeaders: { Authorization: apiKeyAuth } }));
+  }
+
   const auth = inject(AuthService);
   const router = inject(Router);
 

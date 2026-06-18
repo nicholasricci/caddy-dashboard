@@ -1,9 +1,10 @@
 import { TestBed } from '@angular/core/testing';
 import { provideZonelessChangeDetection } from '@angular/core';
-import { HttpClient, provideHttpClient, withInterceptors } from '@angular/common/http';
+import { HttpClient, HttpContext, provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { Router } from '@angular/router';
 import { of, tap } from 'rxjs';
+import { API_KEY_AUTHORIZATION } from '../core/http-context.tokens';
 import { authInterceptor } from './auth.interceptor';
 import { AuthService } from './auth.service';
 import { environment } from '../../environments/environment';
@@ -43,6 +44,23 @@ describe('authInterceptor', () => {
     const req = httpMock.expectOne(`${apiBase}/nodes`);
     expect(req.request.headers.get('Authorization')).toBe('Bearer my-token');
     req.flush([]);
+  });
+
+  it('uses API key Authorization when HttpContext token is set', () => {
+    auth.getAccessToken.and.returnValue('jwt-should-not-be-used');
+
+    http
+      .post(
+        `${apiBase}/discovery/disc-1/register-upstream`,
+        { config_id: '@x', dry_run: true },
+        { context: new HttpContext().set(API_KEY_AUTHORIZATION, 'cdk_live_secret') }
+      )
+      .subscribe();
+
+    const req = httpMock.expectOne(`${apiBase}/discovery/disc-1/register-upstream`);
+    expect(req.request.headers.get('Authorization')).toBe('cdk_live_secret');
+    expect(auth.getAccessToken).not.toHaveBeenCalled();
+    req.flush({ changed: false, dry_run: true });
   });
 
   it('on 401 refreshes and retries with new token', () => {
