@@ -1,20 +1,40 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { rxResource } from '@angular/core/rxjs-interop';
+import { of } from 'rxjs';
 import { DiscoveryApiService } from '../../services/api/discovery-api.service';
-import { API_KEY_SCOPE_REGISTER_UPSTREAM, type RegisterUpstreamRequestV1, type RegisterUpstreamResponseV1 } from '../../models/api-v1.model';
+import { UpstreamProfilesApiService } from '../../services/api/upstream-profiles-api.service';
+import {
+  API_KEY_SCOPE_REGISTER_UPSTREAM,
+  type RegisterUpstreamByProfileRequestV1,
+  type RegisterUpstreamProfileResponseV1,
+  type RegisterUpstreamRequestV1,
+  type RegisterUpstreamResponseV1
+} from '../../models/api-v1.model';
 import { normalizeDiscoveryRows } from '../../core/api-list-normalize.util';
 import { StitchIconComponent } from '../../ui/stitch-icon.component';
 import { ConfirmService } from '../../ui/confirm.service';
 import { extractApiError } from '../../core/http-error.util';
 
+type PlaygroundOperation = 'register_upstream' | 'register_upstream_by_profile';
 type TargetMode = 'dial' | 'private_ip';
 type ResultKind = 'preview' | 'applied';
 
 interface PlaygroundResult {
   kind: ResultKind;
-  response: RegisterUpstreamResponseV1;
+  response: RegisterUpstreamResponseV1 | RegisterUpstreamProfileResponseV1;
 }
+
+const PLAYGROUND_OPERATIONS: readonly {
+  id: PlaygroundOperation;
+  label: string;
+}[] = [
+  { id: 'register_upstream', label: 'register_upstream — POST /discovery/:id/register-upstream' },
+  {
+    id: 'register_upstream_by_profile',
+    label: 'register_upstream_by_profile — POST /upstream-profiles/:id/register'
+  }
+];
 
 function parseOptionalPort(raw: string): number | undefined {
   const trimmed = raw.trim();
@@ -38,8 +58,8 @@ function parseOptionalPort(raw: string): number | undefined {
         </h2>
         <p class="text-sm text-stitch-on-surface-variant mt-3 leading-relaxed max-w-2xl">
           Test machine-to-machine endpoints with an API key secret (scope
-          <span class="font-mono text-stitch-on-surface">{{ registerUpstreamScope }}</span>). Session JWT is not used for
-          these calls.
+          <span class="font-mono text-stitch-on-surface">{{ registerUpstreamScope }}</span>). Each operation exposes only
+          the parameters its API endpoint expects.
         </p>
       </header>
 
@@ -52,7 +72,9 @@ function parseOptionalPort(raw: string): number | undefined {
               >Operation</label
             >
             <select id="playground-operation" class="select select-bordered w-full mt-1 font-mono text-sm" formControlName="operation">
-              <option value="register_upstream">register_upstream — POST /discovery/:id/register-upstream</option>
+              @for (op of operations; track op.id) {
+                <option [value]="op.id">{{ op.label }}</option>
+              }
             </select>
           </div>
 
@@ -71,87 +93,172 @@ function parseOptionalPort(raw: string): number | undefined {
             <p class="text-xs text-stitch-on-surface-variant mt-1">Not stored; kept in memory for this page only.</p>
           </div>
 
-          <div>
-            <label class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium" for="playground-discovery"
-              >Discovery group</label
-            >
-            <select id="playground-discovery" class="select select-bordered w-full mt-1 text-sm" formControlName="discoveryId">
-              <option value="" disabled>Select a discovery rule</option>
-              @for (cfg of discoveryConfigs(); track cfg.id) {
-                <option [value]="cfg.id">{{ discoveryOptionLabel(cfg) }}</option>
-              }
-            </select>
-          </div>
-
-          <div>
-            <label class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium" for="playground-config-id"
-              >config_id</label
-            >
-            <input
-              id="playground-config-id"
-              class="input-technical mt-1 font-mono"
-              formControlName="configId"
-              placeholder="@your-route-id"
-              autocomplete="off"
-            />
-          </div>
-
-          <fieldset class="border-0 p-0 m-0 min-w-0">
-            <legend class="text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium mb-2">Target</legend>
-            <div class="flex flex-wrap gap-4 mb-4" role="radiogroup" aria-label="Upstream target mode">
-              <label class="flex items-center gap-2 text-sm cursor-pointer">
-                <input type="radio" class="radio radio-sm" formControlName="targetMode" value="dial" />
-                dial (host:port)
-              </label>
-              <label class="flex items-center gap-2 text-sm cursor-pointer">
-                <input type="radio" class="radio radio-sm" formControlName="targetMode" value="private_ip" />
-                private_ip + port
-              </label>
+          @if (operation() === 'register_upstream_by_profile') {
+            <div>
+              <label
+                class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium"
+                for="playground-profile-discovery"
+                >Discovery group (optional)</label
+              >
+              <select
+                id="playground-profile-discovery"
+                class="select select-bordered w-full mt-1 text-sm"
+                formControlName="profileDiscoveryHelperId"
+              >
+                <option value="">— none — loads profile list when selected</option>
+                @for (cfg of discoveryConfigs(); track cfg.id) {
+                  <option [value]="cfg.id">{{ discoveryOptionLabel(cfg) }}</option>
+                }
+              </select>
+              <p class="text-xs text-stitch-on-surface-variant mt-1">
+                Helper only (session JWT). Not sent on the M2M call — paste a profile ID below or pick from the list.
+              </p>
             </div>
 
-            @if (targetMode() === 'dial') {
-              <label class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium" for="playground-dial"
-                >dial</label
+            <div>
+              <label
+                class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium"
+                for="playground-profile-id"
+                >Profile ID</label
               >
               <input
-                id="playground-dial"
+                id="playground-profile-id"
                 class="input-technical mt-1 font-mono"
-                formControlName="dial"
-                placeholder="10.0.0.5:8080"
+                formControlName="profileId"
+                placeholder="prof-…"
                 autocomplete="off"
               />
-            } @else {
-              <div class="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label
-                    class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium"
-                    for="playground-private-ip"
-                    >private_ip</label
-                  >
-                  <input
-                    id="playground-private-ip"
-                    class="input-technical mt-1 font-mono"
-                    formControlName="privateIp"
-                    placeholder="10.0.0.5"
-                    autocomplete="off"
-                  />
-                </div>
-                <div>
-                  <label class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium" for="playground-port"
-                    >port (optional)</label
-                  >
-                  <input
-                    id="playground-port"
-                    class="input-technical mt-1 font-mono"
-                    formControlName="port"
-                    inputmode="numeric"
-                    placeholder="8080"
-                    autocomplete="off"
-                  />
-                </div>
+            </div>
+
+            @if (form.controls.profileDiscoveryHelperId.value) {
+              <div>
+                <label
+                  class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium"
+                  for="playground-profile-picker"
+                  >Pick from list</label
+                >
+                <select
+                  id="playground-profile-picker"
+                  class="select select-bordered w-full mt-1 text-sm"
+                  formControlName="profilePicker"
+                  (change)="applyProfilePick()"
+                >
+                  <option value="">Select a profile</option>
+                  @for (profile of profilesForDiscovery(); track profile.id) {
+                    <option [value]="profile.id">{{ profileOptionLabel(profile) }}</option>
+                  }
+                </select>
+                @if (profilesLoading()) {
+                  <p class="text-xs text-stitch-on-surface-variant mt-1">Loading profiles…</p>
+                } @else if (profilesForDiscovery().length === 0) {
+                  <p class="text-xs text-stitch-on-surface-variant mt-1">No upstream profiles for this discovery group.</p>
+                }
               </div>
             }
-          </fieldset>
+
+            <div>
+              <label
+                class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium"
+                for="playground-profile-private-ip"
+                >private_ip</label
+              >
+              <input
+                id="playground-profile-private-ip"
+                class="input-technical mt-1 font-mono"
+                formControlName="profilePrivateIp"
+                placeholder="10.0.0.5"
+                autocomplete="off"
+              />
+            </div>
+          } @else {
+            <div>
+              <label
+                class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium"
+                for="playground-upstream-discovery"
+                >Discovery group</label
+              >
+              <select
+                id="playground-upstream-discovery"
+                class="select select-bordered w-full mt-1 text-sm"
+                formControlName="upstreamDiscoveryId"
+              >
+                <option value="" disabled>Select a discovery rule</option>
+                @for (cfg of discoveryConfigs(); track cfg.id) {
+                  <option [value]="cfg.id">{{ discoveryOptionLabel(cfg) }}</option>
+                }
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium" for="playground-config-id"
+                >config_id</label
+              >
+              <input
+                id="playground-config-id"
+                class="input-technical mt-1 font-mono"
+                formControlName="configId"
+                placeholder="@your-route-id"
+                autocomplete="off"
+              />
+            </div>
+
+            <fieldset class="border-0 p-0 m-0 min-w-0">
+              <legend class="text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium mb-2">Target</legend>
+              <div class="flex flex-wrap gap-4 mb-4" role="radiogroup" aria-label="Upstream target mode">
+                <label class="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="radio" class="radio radio-sm" formControlName="targetMode" value="dial" />
+                  dial (host:port)
+                </label>
+                <label class="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="radio" class="radio radio-sm" formControlName="targetMode" value="private_ip" />
+                  private_ip + port
+                </label>
+              </div>
+
+              @if (targetMode() === 'dial') {
+                <label class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium" for="playground-dial"
+                  >dial</label
+                >
+                <input
+                  id="playground-dial"
+                  class="input-technical mt-1 font-mono"
+                  formControlName="dial"
+                  placeholder="10.0.0.5:8080"
+                  autocomplete="off"
+                />
+              } @else {
+                <div class="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label
+                      class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium"
+                      for="playground-upstream-private-ip"
+                      >private_ip</label
+                    >
+                    <input
+                      id="playground-upstream-private-ip"
+                      class="input-technical mt-1 font-mono"
+                      formControlName="upstreamPrivateIp"
+                      placeholder="10.0.0.5"
+                      autocomplete="off"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium" for="playground-port"
+                      >port (optional)</label
+                    >
+                    <input
+                      id="playground-port"
+                      class="input-technical mt-1 font-mono"
+                      formControlName="port"
+                      inputmode="numeric"
+                      placeholder="8080"
+                      autocomplete="off"
+                    />
+                  </div>
+                </div>
+              }
+            </fieldset>
+          }
         </form>
 
         @if (formError()) {
@@ -165,7 +272,7 @@ function parseOptionalPort(raw: string): number | undefined {
           <button
             type="button"
             class="btn-stitch-secondary btn-stitch-secondary--sm stitch-icon-btn"
-            [disabled]="busy() || form.invalid"
+            [disabled]="busy() || !canPreview()"
             (click)="preview()"
           >
             @if (busy() && pendingAction() === 'preview') {
@@ -202,7 +309,7 @@ function parseOptionalPort(raw: string): number | undefined {
             @if (r.response.changed !== undefined) {
               <span class="stitch-status-chip">changed: {{ r.response.changed ? 'yes' : 'no' }}</span>
             }
-            @if (r.response.dial) {
+            @if ('dial' in r.response && r.response.dial) {
               <span class="text-xs font-mono text-stitch-on-surface-variant">dial: {{ r.response.dial }}</span>
             }
             @if (r.response.source_node_id) {
@@ -217,9 +324,11 @@ function parseOptionalPort(raw: string): number | undefined {
 })
 export class ApiPlaygroundPageComponent {
   private readonly discoveryApi = inject(DiscoveryApiService);
+  private readonly profilesApi = inject(UpstreamProfilesApiService);
   private readonly confirmService = inject(ConfirmService);
   private readonly fb = inject(FormBuilder);
 
+  readonly operations = PLAYGROUND_OPERATIONS;
   readonly registerUpstreamScope = API_KEY_SCOPE_REGISTER_UPSTREAM;
 
   readonly busy = signal(false);
@@ -229,32 +338,62 @@ export class ApiPlaygroundPageComponent {
   readonly result = signal<PlaygroundResult | null>(null);
   readonly previewFingerprint = signal<string | null>(null);
   private readonly formRevision = signal(0);
+  private readonly profileDiscoveryId = signal('');
 
   readonly discoveryResource = rxResource({
     stream: () => this.discoveryApi.listDiscovery()
   });
 
+  readonly profilesResource = rxResource({
+    params: () => ({ discoveryId: this.profileDiscoveryId() }),
+    stream: ({ params }) => {
+      const discoveryId = params.discoveryId.trim();
+      if (!discoveryId) {
+        return of([]);
+      }
+      return this.profilesApi.listForDiscovery(discoveryId);
+    }
+  });
+
   readonly discoveryConfigs = computed(() => normalizeDiscoveryRows(this.discoveryResource.value()));
+  readonly profilesForDiscovery = computed(() => this.profilesResource.value() ?? []);
+  readonly profilesLoading = computed(() => this.profilesResource.isLoading());
 
   readonly form = this.fb.nonNullable.group({
-    operation: [{ value: 'register_upstream', disabled: true }],
+    operation: ['register_upstream' as PlaygroundOperation],
     apiKeySecret: ['', [Validators.required]],
-    discoveryId: ['', [Validators.required]],
-    configId: ['', [Validators.required]],
+    profileDiscoveryHelperId: [''],
+    profileId: [''],
+    profilePicker: [''],
+    profilePrivateIp: [''],
+    upstreamDiscoveryId: [''],
+    configId: [''],
     targetMode: ['dial' as TargetMode],
     dial: [''],
-    privateIp: [''],
+    upstreamPrivateIp: [''],
     port: ['']
   });
 
-  readonly targetMode = computed(() => this.form.controls.targetMode.value as TargetMode);
+  readonly operation = computed(() => {
+    this.formRevision();
+    return this.form.controls.operation.value as PlaygroundOperation;
+  });
+  readonly targetMode = computed(() => {
+    this.formRevision();
+    return this.form.controls.targetMode.value as TargetMode;
+  });
+
+  readonly canPreview = computed(() => {
+    this.formRevision();
+    return this.formValidForOperation() && !this.busy();
+  });
 
   readonly canSend = computed(() => {
     this.formRevision();
     if (!this.previewFingerprint() || this.previewStale()) {
       return false;
     }
-    return this.form.valid && !this.busy();
+    return this.formValidForOperation() && !this.busy();
   });
 
   readonly previewStale = computed(() => {
@@ -272,11 +411,37 @@ export class ApiPlaygroundPageComponent {
       this.formError.set(null);
       this.requestError.set(null);
     });
+    this.form.controls.operation.valueChanges.subscribe(op => {
+      this.previewFingerprint.set(null);
+      this.result.set(null);
+      this.resetInactiveOperationFields(op as PlaygroundOperation);
+      this.syncValidators();
+      this.formRevision.update(v => v + 1);
+    });
+    this.form.controls.profileDiscoveryHelperId.valueChanges.subscribe(discoveryId => {
+      this.profileDiscoveryId.set(discoveryId ?? '');
+      this.form.controls.profilePicker.setValue('', { emitEvent: false });
+      this.profilesResource.reload();
+    });
+    this.syncValidators();
+  }
+
+  applyProfilePick(): void {
+    const picked = this.form.controls.profilePicker.value.trim();
+    if (picked) {
+      this.form.controls.profileId.setValue(picked);
+    }
   }
 
   discoveryOptionLabel(cfg: { id?: string; name?: string }): string {
     const id = cfg.id ?? '';
     const name = cfg.name?.trim();
+    return name ? `${name} (${id})` : id;
+  }
+
+  profileOptionLabel(profile: { id?: string; name?: string }): string {
+    const id = profile.id ?? '';
+    const name = profile.name?.trim();
     return name ? `${name} (${id})` : id;
   }
 
@@ -289,10 +454,17 @@ export class ApiPlaygroundPageComponent {
   }
 
   async send(): Promise<void> {
+    const title =
+      this.operation() === 'register_upstream_by_profile'
+        ? 'Send profile register?'
+        : 'Send register-upstream?';
+    const message =
+      this.operation() === 'register_upstream_by_profile'
+        ? 'This applies upstream dials for all bindings in the profile on live Caddy config (not a dry-run). Continue?'
+        : 'This applies the upstream registration to live Caddy config on the discovery group (not a dry-run). Continue?';
     const confirmed = await this.confirmService.ask({
-      title: 'Send register-upstream?',
-      message:
-        'This applies the upstream registration to live Caddy config on the discovery group (not a dry-run). Continue?',
+      title,
+      message,
       confirmLabel: 'Send',
       cancelLabel: 'Cancel',
       variant: 'danger'
@@ -307,62 +479,171 @@ export class ApiPlaygroundPageComponent {
     this.formError.set(null);
     this.requestError.set(null);
 
-    const built = this.buildRequestBody(dryRun);
+    const built = this.buildRequest(dryRun);
     if (!built.ok) {
       this.formError.set(built.error);
       return;
     }
 
-    const { discoveryId, apiKeySecret, body } = built;
-
     this.busy.set(true);
     this.pendingAction.set(action);
 
-    this.discoveryApi.registerUpstream(discoveryId, apiKeySecret, body).subscribe({
-      next: res => {
-        this.busy.set(false);
-        this.pendingAction.set(null);
-        const kind: ResultKind = dryRun ? 'preview' : 'applied';
-        this.result.set({ kind, response: res });
-        if (dryRun) {
-          this.previewFingerprint.set(this.buildFingerprint());
-          this.formRevision.update(v => v + 1);
-        }
-      },
-      error: err => {
-        this.busy.set(false);
-        this.pendingAction.set(null);
-        this.requestError.set(extractApiError(err, 'Request failed'));
+    const onSuccess = (res: RegisterUpstreamResponseV1 | RegisterUpstreamProfileResponseV1) => {
+      this.busy.set(false);
+      this.pendingAction.set(null);
+      const kind: ResultKind = dryRun ? 'preview' : 'applied';
+      this.result.set({ kind, response: res });
+      if (dryRun) {
+        this.previewFingerprint.set(this.buildFingerprint());
+        this.formRevision.update(v => v + 1);
       }
-    });
+    };
+
+    const onError = (err: unknown) => {
+      this.busy.set(false);
+      this.pendingAction.set(null);
+      this.requestError.set(extractApiError(err, 'Request failed'));
+    };
+
+    if (built.kind === 'register_upstream') {
+      const { discoveryId, apiKeySecret, body } = built;
+      this.discoveryApi.registerUpstream(discoveryId, apiKeySecret, body).subscribe({
+        next: onSuccess,
+        error: onError
+      });
+    } else {
+      const { profileId, apiKeySecret, body } = built;
+      this.profilesApi.registerByProfile(profileId, apiKeySecret, body).subscribe({
+        next: onSuccess,
+        error: onError
+      });
+    }
+  }
+
+  private resetInactiveOperationFields(active: PlaygroundOperation): void {
+    if (active === 'register_upstream_by_profile') {
+      this.form.patchValue(
+        {
+          upstreamDiscoveryId: '',
+          configId: '',
+          targetMode: 'dial',
+          dial: '',
+          upstreamPrivateIp: '',
+          port: ''
+        },
+        { emitEvent: false }
+      );
+      return;
+    }
+
+    this.profileDiscoveryId.set('');
+    this.form.patchValue(
+      {
+        profileDiscoveryHelperId: '',
+        profileId: '',
+        profilePicker: '',
+        profilePrivateIp: ''
+      },
+      { emitEvent: false }
+    );
+  }
+
+  private formValidForOperation(): boolean {
+    const v = this.form.getRawValue();
+    if (!v.apiKeySecret.trim()) {
+      return false;
+    }
+    if (v.operation === 'register_upstream_by_profile') {
+      return !!v.profileId.trim() && !!v.profilePrivateIp.trim();
+    }
+    if (!v.upstreamDiscoveryId.trim() || !v.configId.trim()) {
+      return false;
+    }
+    if (v.targetMode === 'dial') {
+      return !!v.dial.trim();
+    }
+    return !!v.upstreamPrivateIp.trim();
+  }
+
+  private syncValidators(): void {
+    const isProfile = this.operation() === 'register_upstream_by_profile';
+    const { profileId, profilePrivateIp, upstreamDiscoveryId, configId, upstreamPrivateIp } = this.form.controls;
+
+    if (isProfile) {
+      profileId.setValidators([Validators.required]);
+      profilePrivateIp.setValidators([Validators.required]);
+      upstreamDiscoveryId.clearValidators();
+      configId.clearValidators();
+      upstreamPrivateIp.clearValidators();
+    } else {
+      profileId.clearValidators();
+      profilePrivateIp.clearValidators();
+      upstreamDiscoveryId.setValidators([Validators.required]);
+      configId.setValidators([Validators.required]);
+    }
+
+    for (const control of [profileId, profilePrivateIp, upstreamDiscoveryId, configId, upstreamPrivateIp]) {
+      control.updateValueAndValidity({ emitEvent: false });
+    }
   }
 
   private buildFingerprint(): string {
     const v = this.form.getRawValue();
+    if (v.operation === 'register_upstream_by_profile') {
+      return JSON.stringify({
+        operation: v.operation,
+        apiKeySecret: v.apiKeySecret.trim(),
+        profileId: v.profileId.trim(),
+        profilePrivateIp: v.profilePrivateIp.trim()
+      });
+    }
     return JSON.stringify({
+      operation: v.operation,
       apiKeySecret: v.apiKeySecret.trim(),
-      discoveryId: v.discoveryId,
+      upstreamDiscoveryId: v.upstreamDiscoveryId.trim(),
       configId: v.configId.trim(),
       targetMode: v.targetMode,
       dial: v.dial.trim(),
-      privateIp: v.privateIp.trim(),
+      upstreamPrivateIp: v.upstreamPrivateIp.trim(),
       port: v.port.trim()
     });
   }
 
-  private buildRequestBody(dryRun: boolean):
-    | { ok: true; discoveryId: string; apiKeySecret: string; body: RegisterUpstreamRequestV1 }
+  private buildRequest(dryRun: boolean):
+    | { ok: true; kind: 'register_upstream'; discoveryId: string; apiKeySecret: string; body: RegisterUpstreamRequestV1 }
+    | {
+        ok: true;
+        kind: 'register_upstream_by_profile';
+        profileId: string;
+        apiKeySecret: string;
+        body: RegisterUpstreamByProfileRequestV1;
+      }
     | { ok: false; error: string } {
-    if (this.form.invalid) {
+    if (!this.formValidForOperation()) {
       return { ok: false, error: 'Fill in all required fields.' };
     }
 
     const v = this.form.getRawValue();
     const apiKeySecret = v.apiKeySecret.trim();
-    const discoveryId = v.discoveryId.trim();
-    const configId = v.configId.trim();
 
-    if (!apiKeySecret || !discoveryId || !configId) {
+    if (v.operation === 'register_upstream_by_profile') {
+      const profileId = v.profileId.trim();
+      const privateIp = v.profilePrivateIp.trim();
+      if (!profileId || !privateIp) {
+        return { ok: false, error: 'API key, profile ID, and private_ip are required.' };
+      }
+      return {
+        ok: true,
+        kind: 'register_upstream_by_profile',
+        profileId,
+        apiKeySecret,
+        body: { private_ip: privateIp, dry_run: dryRun }
+      };
+    }
+
+    const discoveryId = v.upstreamDiscoveryId.trim();
+    const configId = v.configId.trim();
+    if (!discoveryId || !configId) {
       return { ok: false, error: 'API key, discovery group, and config_id are required.' };
     }
 
@@ -378,7 +659,7 @@ export class ApiPlaygroundPageComponent {
       }
       body.dial = dial;
     } else {
-      const privateIp = v.privateIp.trim();
+      const privateIp = v.upstreamPrivateIp.trim();
       if (!privateIp) {
         return { ok: false, error: 'private_ip is required when using private_ip target mode.' };
       }
@@ -392,6 +673,6 @@ export class ApiPlaygroundPageComponent {
       }
     }
 
-    return { ok: true, discoveryId, apiKeySecret, body };
+    return { ok: true, kind: 'register_upstream', discoveryId, apiKeySecret, body };
   }
 }

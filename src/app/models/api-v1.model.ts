@@ -277,6 +277,7 @@ export interface APIKeyV1 {
   key_prefix?: string;
   scopes?: string[];
   allowed_discovery_config_ids?: string[];
+  allowed_upstream_profile_ids?: string[];
   expires_at?: string | null;
   revoked_at?: string | null;
   last_used_at?: string | null;
@@ -294,6 +295,7 @@ export interface CreateAPIKeyRequestV1 {
   name: string;
   scopes: string[];
   allowed_discovery_config_ids: string[];
+  allowed_upstream_profile_ids?: string[];
   expires_at?: string;
 }
 
@@ -320,4 +322,48 @@ export interface RegisterUpstreamResponseV1 {
   mutate?: MutateUpstreamsResponseV1;
   propagate?: PropagateConfigResponseV1;
   source_node_id?: string;
+}
+
+export interface UpstreamProfileBindingV1 {
+  config_id: string;
+  port?: number;
+}
+
+export interface UpstreamProfileV1 {
+  id?: string;
+  name?: string;
+  description?: string;
+  discovery_config_id?: string;
+  bindings?: UpstreamProfileBindingV1[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+/** POST /discovery/{id}/upstream-profiles, PUT /upstream-profiles/{id} */
+export interface UpstreamProfileWriteRequestV1 {
+  name: string;
+  bindings: UpstreamProfileBindingV1[];
+  description?: string;
+}
+
+/** POST /api/v1/upstream-profiles/{id}/register */
+export interface RegisterUpstreamByProfileRequestV1 {
+  private_ip: string;
+  dry_run?: boolean;
+}
+
+export interface RegisterUpstreamProfileTargetV1 {
+  config_id?: string;
+  dial?: string;
+}
+
+export interface RegisterUpstreamProfileResponseV1 {
+  changed?: boolean;
+  discovery_config_id?: string;
+  dry_run?: boolean;
+  mutate?: MutateUpstreamsResponseV1;
+  propagate?: PropagateConfigResponseV1;
+  source_node_id?: string;
+  targets?: RegisterUpstreamProfileTargetV1[];
+  upstream_profile_id?: string;
 }

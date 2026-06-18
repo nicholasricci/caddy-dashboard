@@ -3,6 +3,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
 import { API_KEY_SCOPE_REGISTER_UPSTREAM, type DiscoveryConfigV1 } from '../../models/api-v1.model';
 import { DashboardApiService } from '../../services/dashboard-api.service';
+import { UpstreamProfilesApiService } from '../../services/api/upstream-profiles-api.service';
 import { ConfirmService } from '../../ui/confirm.service';
 import { ApiKeysAdminPageComponent } from './api-keys-admin-page.component';
 
@@ -10,10 +11,13 @@ describe('ApiKeysAdminPageComponent', () => {
   let fixture: ComponentFixture<ApiKeysAdminPageComponent>;
   let component: ApiKeysAdminPageComponent;
   let api: jasmine.SpyObj<DashboardApiService>;
+  let profilesApi: jasmine.SpyObj<UpstreamProfilesApiService>;
   let confirmAsk: jasmine.Spy;
 
   beforeEach(async () => {
     confirmAsk = jasmine.createSpy('ask').and.resolveTo(true);
+    profilesApi = jasmine.createSpyObj<UpstreamProfilesApiService>('UpstreamProfilesApiService', ['listForDiscovery']);
+    profilesApi.listForDiscovery.and.returnValue(of([]));
     api = jasmine.createSpyObj<DashboardApiService>('DashboardApiService', [
       'listApiKeys',
       'listDiscovery',
@@ -47,6 +51,7 @@ describe('ApiKeysAdminPageComponent', () => {
       providers: [
         provideZonelessChangeDetection(),
         { provide: DashboardApiService, useValue: api },
+        { provide: UpstreamProfilesApiService, useValue: profilesApi },
         { provide: ConfirmService, useValue: { ask: confirmAsk } }
       ]
     }).compileComponents();

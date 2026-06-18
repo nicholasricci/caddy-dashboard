@@ -7,6 +7,7 @@ import type { DiscoveryConfigV1, DiscoveryParametersV1, DiscoveryTagPairV1, Snap
 import { StitchIconComponent } from '../../ui/stitch-icon.component';
 import { ConfirmService } from '../../ui/confirm.service';
 import { DiscoveryRuleFormModalComponent } from './discovery-rule-form-modal.component';
+import { DiscoveryUpstreamProfilesPanelComponent } from './discovery-upstream-profiles-panel.component';
 import { extractApiError } from '../../core/http-error.util';
 import { normalizeDiscoveryRows } from '../../core/api-list-normalize.util';
 
@@ -144,6 +145,16 @@ function parseAddressesText(d: DiscoveryConfigV1): string {
             Run
           }
         </button>
+        <button
+          type="button"
+          class="btn-stitch-secondary btn-stitch-secondary--sm stitch-icon-btn"
+          [class.ring-2]="profilesExpanded()"
+          [class.ring-stitch-primary]="profilesExpanded()"
+          (click)="profilesToggleRequested.emit(config())"
+        >
+          <app-stitch-icon name="circleStack" size="xs" />
+          Profiles
+        </button>
         <button type="button" class="btn-stitch-secondary btn-stitch-secondary--sm stitch-icon-btn" (click)="editRequested.emit(config())">
           <app-stitch-icon name="edit" size="xs" />
           Edit
@@ -164,8 +175,10 @@ export class DiscoveryRuleCardComponent {
   readonly config = input.required<DiscoveryConfigV1>();
   readonly dim = input.required<boolean>();
   readonly running = input(false);
+  readonly profilesExpanded = input(false);
 
   readonly runRequested = output<DiscoveryConfigV1>();
+  readonly profilesToggleRequested = output<DiscoveryConfigV1>();
   readonly editRequested = output<DiscoveryConfigV1>();
   readonly deleteRequested = output<DiscoveryConfigV1>();
 
@@ -216,7 +229,13 @@ export class DiscoveryRuleCardComponent {
   selector: 'app-discovery-page',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, StitchIconComponent, DiscoveryRuleFormModalComponent, DiscoveryRuleCardComponent],
+  imports: [
+    ReactiveFormsModule,
+    StitchIconComponent,
+    DiscoveryRuleFormModalComponent,
+    DiscoveryRuleCardComponent,
+    DiscoveryUpstreamProfilesPanelComponent
+  ],
   template: `
     <div class="px-10 py-12 max-w-6xl mx-auto">
       <header class="mb-10 flex flex-wrap items-start justify-between gap-6">
@@ -266,14 +285,21 @@ export class DiscoveryRuleCardComponent {
           } @else {
             <div class="space-y-4">
               @for (d of configs(); track d.id; let i = $index) {
-                <app-discovery-rule-card
-                  [config]="d"
-                  [dim]="i % 2 === 0"
-                  [running]="runningId() === d.id"
-                  (runRequested)="run($event)"
-                  (editRequested)="edit($event)"
-                  (deleteRequested)="remove($event)"
-                />
+                <div>
+                  <app-discovery-rule-card
+                    [config]="d"
+                    [dim]="i % 2 === 0"
+                    [running]="runningId() === d.id"
+                    [profilesExpanded]="profilesExpandedId() === d.id"
+                    (runRequested)="run($event)"
+                    (profilesToggleRequested)="toggleProfiles($event)"
+                    (editRequested)="edit($event)"
+                    (deleteRequested)="remove($event)"
+                  />
+                  @if (profilesExpandedId() === d.id && d.id) {
+                    <app-discovery-upstream-profiles-panel [discoveryId]="d.id" [discoveryName]="d.name || d.id" />
+                  }
+                </div>
               } @empty {
                 <div class="stitch-panel stitch-panel--dim text-center py-14 px-6">
                   <app-stitch-icon name="discovery" size="lg" class="mx-auto text-stitch-on-surface-variant mb-4" />
@@ -404,6 +430,7 @@ export class DiscoveryPageComponent {
   readonly saving = signal(false);
   readonly editingId = signal<string | null>(null);
   readonly runningId = signal<string | null>(null);
+  readonly profilesExpandedId = signal<string | null>(null);
   readonly lastRun = signal<string | null>(null);
 
   readonly discoveryForm = this.fb.nonNullable.group({
@@ -437,6 +464,14 @@ export class DiscoveryPageComponent {
     this.actionError.set(null);
     this.pruneExpiredOptimisticEntries();
     this.refreshVersion.update(v => v + 1);
+  }
+
+  toggleProfiles(d: DiscoveryConfigV1): void {
+    const id = d.id ?? null;
+    if (!id) {
+      return;
+    }
+    this.profilesExpandedId.update(current => (current === id ? null : id));
   }
 
   openCreate(): void {

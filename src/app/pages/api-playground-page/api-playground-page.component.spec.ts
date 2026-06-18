@@ -1,8 +1,12 @@
 import { provideZonelessChangeDetection } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
-import type { RegisterUpstreamResponseV1 } from '../../models/api-v1.model';
+import type {
+  RegisterUpstreamProfileResponseV1,
+  RegisterUpstreamResponseV1
+} from '../../models/api-v1.model';
 import { DiscoveryApiService } from '../../services/api/discovery-api.service';
+import { UpstreamProfilesApiService } from '../../services/api/upstream-profiles-api.service';
 import { ConfirmService } from '../../ui/confirm.service';
 import { ApiPlaygroundPageComponent } from './api-playground-page.component';
 
@@ -10,6 +14,7 @@ describe('ApiPlaygroundPageComponent', () => {
   let fixture: ComponentFixture<ApiPlaygroundPageComponent>;
   let component: ApiPlaygroundPageComponent;
   let discoveryApi: jasmine.SpyObj<DiscoveryApiService>;
+  let profilesApi: jasmine.SpyObj<UpstreamProfilesApiService>;
   let confirmAsk: jasmine.Spy;
 
   const previewResponse: RegisterUpstreamResponseV1 = {
@@ -18,20 +23,33 @@ describe('ApiPlaygroundPageComponent', () => {
     dial: '10.0.0.5:8080'
   };
 
+  const profilePreviewResponse: RegisterUpstreamProfileResponseV1 = {
+    changed: false,
+    dry_run: true,
+    upstream_profile_id: 'prof-1'
+  };
+
   beforeEach(async () => {
     confirmAsk = jasmine.createSpy('ask').and.resolveTo(true);
     discoveryApi = jasmine.createSpyObj<DiscoveryApiService>('DiscoveryApiService', [
       'listDiscovery',
       'registerUpstream'
     ]);
+    profilesApi = jasmine.createSpyObj<UpstreamProfilesApiService>('UpstreamProfilesApiService', [
+      'listForDiscovery',
+      'registerByProfile'
+    ]);
     discoveryApi.listDiscovery.and.returnValue(of([{ id: 'disc-1', name: 'prod-group' }]));
     discoveryApi.registerUpstream.and.returnValue(of(previewResponse));
+    profilesApi.listForDiscovery.and.returnValue(of([{ id: 'prof-1', name: 'web-stack', discovery_config_id: 'disc-1' }]));
+    profilesApi.registerByProfile.and.returnValue(of(profilePreviewResponse));
 
     await TestBed.configureTestingModule({
       imports: [ApiPlaygroundPageComponent],
       providers: [
         provideZonelessChangeDetection(),
         { provide: DiscoveryApiService, useValue: discoveryApi },
+        { provide: UpstreamProfilesApiService, useValue: profilesApi },
         { provide: ConfirmService, useValue: { ask: confirmAsk } }
       ]
     }).compileComponents();
@@ -41,13 +59,23 @@ describe('ApiPlaygroundPageComponent', () => {
     fixture.detectChanges();
   });
 
-  function fillForm(): void {
+  function fillRegisterUpstreamForm(): void {
     component.form.patchValue({
+      operation: 'register_upstream',
       apiKeySecret: 'cdk_live_test',
-      discoveryId: 'disc-1',
+      upstreamDiscoveryId: 'disc-1',
       configId: '@route-main',
       targetMode: 'dial',
       dial: '10.0.0.5:8080'
+    });
+  }
+
+  function fillProfileFormPasted(): void {
+    component.form.patchValue({
+      operation: 'register_upstream_by_profile',
+      apiKeySecret: 'cdk_live_test',
+      profileId: 'prof-pasted',
+      profilePrivateIp: '10.0.0.5'
     });
   }
 
@@ -59,7 +87,7 @@ describe('ApiPlaygroundPageComponent', () => {
 
   it('preview calls registerUpstream with dry_run true', async () => {
     await fixture.whenStable();
-    fillForm();
+    fillRegisterUpstreamForm();
     component.preview();
     await fixture.whenStable();
 
@@ -77,7 +105,7 @@ describe('ApiPlaygroundPageComponent', () => {
 
   it('send calls registerUpstream with dry_run false after confirm', async () => {
     await fixture.whenStable();
-    fillForm();
+    fillRegisterUpstreamForm();
     component.preview();
     await fixture.whenStable();
 
@@ -94,5 +122,74 @@ describe('ApiPlaygroundPageComponent', () => {
       jasmine.objectContaining({ dry_run: false })
     );
     expect(component.result()?.kind).toBe('applied');
+  });
+
+  it('profile preview works with pasted profile ID and no discovery helper', async () => {
+    await fixture.whenStable();
+    fillProfileFormPasted();
+    component.preview();
+    await fixture.whenStable();
+
+    expect(profilesApi.listForDiscovery).not.toHaveBeenCalled();
+    expect(profilesApi.registerByProfile).toHaveBeenCalledWith(
+      'prof-pasted',
+      'cdk_live_test',
+      jasmine.objectContaining({ private_ip: '10.0.0.5', dry_run: true })
+    );
+    expect(component.result()?.kind).toBe('preview');
+  });
+
+  it('profile picker sets profileId text input', async () => {
+    await fixture.whenStable();
+    component.form.patchValue({
+      operation: 'register_upstream_by_profile',
+      apiKeySecret: 'cdk_live_test',
+      profileDiscoveryHelperId: 'disc-1',
+      profilePrivateIp: '10.0.0.5'
+    });
+    await fixture.whenStable();
+
+    component.form.controls.profilePicker.setValue('prof-1');
+    component.applyProfilePick();
+
+    expect(component.form.controls.profileId.value).toBe('prof-1');
+  });
+
+  it('updates visible fields when operation changes', async () => {
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('#playground-config-id')).not.toBeNull();
+    expect(root.querySelector('#playground-profile-id')).toBeNull();
+
+    component.form.controls.operation.setValue('register_upstream_by_profile');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(root.querySelector('#playground-profile-id')).not.toBeNull();
+    expect(root.querySelector('#playground-config-id')).toBeNull();
+  });
+
+  it('switching operation clears inactive branch fields', async () => {
+    await fixture.whenStable();
+    fillRegisterUpstreamForm();
+    component.form.controls.operation.setValue('register_upstream_by_profile');
+    await fixture.whenStable();
+
+    expect(component.form.controls.upstreamDiscoveryId.value).toBe('');
+    expect(component.form.controls.configId.value).toBe('');
+    expect(component.form.controls.dial.value).toBe('');
+
+    component.form.patchValue({
+      profileId: 'prof-1',
+      profilePrivateIp: '10.0.0.9'
+    });
+    component.form.controls.operation.setValue('register_upstream');
+    await fixture.whenStable();
+
+    expect(component.form.controls.profileId.value).toBe('');
+    expect(component.form.controls.profilePrivateIp.value).toBe('');
   });
 });

@@ -1,11 +1,15 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { rxResource } from '@angular/core/rxjs-interop';
-import { forkJoin } from 'rxjs';
+import { forkJoin, of } from 'rxjs';
+import { map, switchMap } from 'rxjs/operators';
 import { DashboardApiService } from '../../services/dashboard-api.service';
+import { UpstreamProfilesApiService } from '../../services/api/upstream-profiles-api.service';
 import {
   API_KEY_SCOPE_REGISTER_UPSTREAM,
-  type APIKeyV1
+  type APIKeyV1,
+  type CreateAPIKeyRequestV1,
+  type UpstreamProfileV1
 } from '../../models/api-v1.model';
 import { StitchIconComponent } from '../../ui/stitch-icon.component';
 import { ConfirmService } from '../../ui/confirm.service';
@@ -118,6 +122,7 @@ function datetimeLocalToIso(value: string): string | undefined {
                 <th class="font-medium py-6 px-4 text-left">Prefix</th>
                 <th class="font-medium py-6 px-4 text-left">Scopes</th>
                 <th class="font-medium py-6 px-4 text-left">Discovery groups</th>
+                <th class="font-medium py-6 px-4 text-left">Upstream profiles</th>
                 <th class="font-medium py-6 px-4 text-left">Status</th>
                 <th class="font-medium py-6 px-4 text-left">Last used</th>
                 <th class="py-6 px-4"></th>
@@ -143,6 +148,9 @@ function datetimeLocalToIso(value: string): string | undefined {
                   </td>
                   <td class="py-6 px-4 align-middle text-xs">
                     {{ discoveryLabels(key.allowed_discovery_config_ids) }}
+                  </td>
+                  <td class="py-6 px-4 align-middle text-xs">
+                    {{ profileLabels(key.allowed_upstream_profile_ids) }}
                   </td>
                   <td class="py-6 px-4 align-middle">
                     <span
@@ -269,6 +277,35 @@ function datetimeLocalToIso(value: string): string | undefined {
                 }
               </fieldset>
 
+              @if (availableProfilesForSelection().length > 0) {
+                <fieldset class="border-0 p-0 m-0 min-w-0">
+                  <legend class="text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium mb-2">
+                    Allowed upstream profiles (optional)
+                  </legend>
+                  <p class="text-xs text-stitch-on-surface-variant mb-2">
+                    Restrict profile-based register calls. Leave empty to allow any profile on the selected discovery groups.
+                  </p>
+                  <div class="space-y-2 max-h-40 overflow-y-auto stitch-panel stitch-panel--dim p-3">
+                    @for (profile of availableProfilesForSelection(); track profile.id) {
+                      <label class="flex items-start gap-2 text-sm cursor-pointer">
+                        <input
+                          type="checkbox"
+                          class="checkbox checkbox-sm mt-0.5"
+                          [checked]="isProfileSelected(profile.id)"
+                          (change)="toggleProfile(profile.id, $event)"
+                        />
+                        <span>
+                          <span class="font-medium">{{ profile.name || profile.id }}</span>
+                          <span class="text-stitch-on-surface-variant font-mono text-xs ml-1"
+                            >({{ discoveryLabels([profile.discovery_config_id ?? '']) }})</span
+                          >
+                        </span>
+                      </label>
+                    }
+                  </div>
+                </fieldset>
+              }
+
               <div>
                 <label class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium" for="api-key-expires"
                   >Expires at (optional)</label
@@ -332,10 +369,19 @@ function datetimeLocalToIso(value: string): string | undefined {
               <p class="text-xs text-emerald-700 mb-4">Copied to clipboard.</p>
             }
 
-            <div class="stitch-panel stitch-panel--dim p-4 mb-6">
+            <div class="stitch-panel stitch-panel--dim p-4 mb-4">
               <p class="stitch-panel-title mb-2">Example: register upstream</p>
               <pre class="text-xs font-mono whitespace-pre-wrap break-all text-stitch-on-surface-variant leading-relaxed">{{ registerUpstreamCurl(reveal) }}</pre>
             </div>
+
+            @if (reveal.profileIds.length > 0) {
+              <div class="stitch-panel stitch-panel--dim p-4 mb-6">
+                <p class="stitch-panel-title mb-2">Example: register via upstream profile</p>
+                <pre class="text-xs font-mono whitespace-pre-wrap break-all text-stitch-on-surface-variant leading-relaxed">{{ registerProfileCurl(reveal) }}</pre>
+              </div>
+            } @else {
+              <div class="mb-6"></div>
+            }
 
             <div class="flex justify-end">
               <button type="button" class="btn-stitch-primary btn-stitch-primary--sm" (click)="acknowledgeSecret()">
@@ -350,6 +396,7 @@ function datetimeLocalToIso(value: string): string | undefined {
 })
 export class ApiKeysAdminPageComponent {
   private readonly api = inject(DashboardApiService);
+  private readonly profilesApi = inject(UpstreamProfilesApiService);
   private readonly confirmService = inject(ConfirmService);
   private readonly fb = inject(FormBuilder);
 
@@ -361,21 +408,34 @@ export class ApiKeysAdminPageComponent {
   readonly discoverySelectionError = signal<string | null>(null);
   readonly createBusy = signal(false);
   readonly showCreateModal = signal(false);
-  readonly revealedSecret = signal<{ secret: string; discoveryIds: string[] } | null>(null);
+  readonly revealedSecret = signal<{ secret: string; discoveryIds: string[]; profileIds: string[] } | null>(null);
   readonly copyFeedback = signal(false);
   readonly selectedDiscoveryIds = signal<Set<string>>(new Set());
+  readonly selectedUpstreamProfileIds = signal<Set<string>>(new Set());
 
   readonly dataResource = rxResource({
     params: () => this.refreshVersion(),
     stream: () =>
-      forkJoin({
-        keys: this.api.listApiKeys(),
-        discovery: this.api.listDiscovery()
-      })
+      this.api.listDiscovery().pipe(
+        switchMap(discovery => {
+          const configs = normalizeDiscoveryRows(discovery);
+          const ids = configs.map(c => c.id).filter((id): id is string => !!id);
+          const profiles$ =
+            ids.length === 0
+              ? of([] as UpstreamProfileV1[])
+              : forkJoin(ids.map(id => this.profilesApi.listForDiscovery(id))).pipe(map(lists => lists.flat()));
+          return forkJoin({
+            keys: this.api.listApiKeys(),
+            discovery: of(discovery),
+            profiles: profiles$
+          });
+        })
+      )
   });
 
   readonly apiKeys = computed(() => this.dataResource.value()?.keys ?? []);
   readonly discoveryConfigs = computed(() => normalizeDiscoveryRows(this.dataResource.value()?.discovery));
+  readonly upstreamProfiles = computed(() => this.dataResource.value()?.profiles ?? []);
   readonly discoveryNameById = computed(() => {
     const map = new Map<string, string>();
     for (const cfg of this.discoveryConfigs()) {
@@ -384,6 +444,25 @@ export class ApiKeysAdminPageComponent {
       }
     }
     return map;
+  });
+  readonly profileNameById = computed(() => {
+    const map = new Map<string, string>();
+    for (const profile of this.upstreamProfiles()) {
+      if (profile.id) {
+        map.set(profile.id, profile.name?.trim() || profile.id);
+      }
+    }
+    return map;
+  });
+
+  readonly availableProfilesForSelection = computed(() => {
+    const selectedDiscovery = this.selectedDiscoveryIds();
+    if (selectedDiscovery.size === 0) {
+      return [];
+    }
+    return this.upstreamProfiles().filter(
+      p => p.id && p.discovery_config_id && selectedDiscovery.has(p.discovery_config_id)
+    );
   });
 
   readonly loading = computed(() => this.dataResource.isLoading());
@@ -447,6 +526,14 @@ export class ApiKeysAdminPageComponent {
     return ids.map(id => map.get(id) ?? id).join(', ');
   }
 
+  profileLabels(ids: string[] | undefined): string {
+    if (!ids?.length) {
+      return '—';
+    }
+    const map = this.profileNameById();
+    return ids.map(id => map.get(id) ?? id).join(', ');
+  }
+
   openCreate(): void {
     this.createError.set(null);
     this.discoverySelectionError.set(null);
@@ -456,6 +543,7 @@ export class ApiKeysAdminPageComponent {
       expiresAt: ''
     });
     this.selectedDiscoveryIds.set(new Set());
+    this.selectedUpstreamProfileIds.set(new Set());
     this.showCreateModal.set(true);
   }
 
@@ -483,10 +571,44 @@ export class ApiKeysAdminPageComponent {
         next.add(id);
       } else {
         next.delete(id);
+        const profilesOnDiscovery = this.upstreamProfiles()
+          .filter(p => p.discovery_config_id === id)
+          .map(p => p.id)
+          .filter((pid): pid is string => !!pid);
+        this.selectedUpstreamProfileIds.update(profileSet => {
+          const nextProfiles = new Set(profileSet);
+          for (const pid of profilesOnDiscovery) {
+            nextProfiles.delete(pid);
+          }
+          return nextProfiles;
+        });
       }
       return next;
     });
     this.discoverySelectionError.set(null);
+  }
+
+  isProfileSelected(id: string | undefined): boolean {
+    if (!id) {
+      return false;
+    }
+    return this.selectedUpstreamProfileIds().has(id);
+  }
+
+  toggleProfile(id: string | undefined, event: Event): void {
+    if (!id) {
+      return;
+    }
+    const checked = (event.target as HTMLInputElement).checked;
+    this.selectedUpstreamProfileIds.update(set => {
+      const next = new Set(set);
+      if (checked) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
+      return next;
+    });
   }
 
   create(): void {
@@ -506,11 +628,13 @@ export class ApiKeysAdminPageComponent {
       return;
     }
 
-    const body = {
+    const profileIds = [...this.selectedUpstreamProfileIds()];
+    const body: CreateAPIKeyRequestV1 = {
       name: value.name.trim(),
       scopes,
       allowed_discovery_config_ids: discoveryIds,
-      expires_at: datetimeLocalToIso(value.expiresAt)
+      expires_at: datetimeLocalToIso(value.expiresAt),
+      ...(profileIds.length > 0 ? { allowed_upstream_profile_ids: profileIds } : {})
     };
 
     this.createBusy.set(true);
@@ -522,7 +646,8 @@ export class ApiKeysAdminPageComponent {
         this.copyFeedback.set(false);
         this.revealedSecret.set({
           secret: res.secret,
-          discoveryIds
+          discoveryIds,
+          profileIds
         });
         this.load();
       },
@@ -549,6 +674,15 @@ export class ApiKeysAdminPageComponent {
   -H "Authorization: ${reveal.secret}" \\
   -H "Content-Type: application/json" \\
   -d '{"config_id":"@your-route-id","dial":"10.0.0.5:8080"}'`;
+  }
+
+  registerProfileCurl(reveal: { secret: string; profileIds: string[] }): string {
+    const base = environment.apiUrl.replace(/\/$/, '');
+    const profileId = reveal.profileIds[0] ?? '<upstream-profile-id>';
+    return `curl -X POST "${base}/upstream-profiles/${profileId}/register" \\
+  -H "Authorization: ${reveal.secret}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"private_ip":"10.0.0.5"}'`;
   }
 
   acknowledgeSecret(): void {
