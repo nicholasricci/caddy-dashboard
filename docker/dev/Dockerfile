@@ -22,8 +22,12 @@ RUN npm run build
 # Production stage
 FROM nginx:1.27-alpine
 
-# Copy custom nginx configuration
-COPY docker/dev/nginx.conf /etc/nginx/nginx.conf
+ENV BACKEND_HOST=caddy-dashboard-api \
+    BACKEND_PORT=8000 \
+    NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx
+
+# Template is rendered to /etc/nginx/nginx.conf at container start
+COPY docker/dev/nginx.conf /etc/nginx/templates/nginx.conf.template
 
 # Copy built application from build stage
 COPY --from=build /app/dist/caddy-dashboard/browser /usr/share/nginx/html
