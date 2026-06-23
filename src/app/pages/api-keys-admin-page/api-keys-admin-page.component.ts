@@ -16,6 +16,7 @@ import {
   type UpstreamProfileV1
 } from '../../models/api-v1.model';
 import { StitchIconComponent } from '../../ui/stitch-icon.component';
+import { ProfileRegisterSnippetsComponent } from '../../ui/profile-register-snippets.component';
 import { ConfirmService } from '../../ui/confirm.service';
 import { extractApiError } from '../../core/http-error.util';
 import {
@@ -80,7 +81,7 @@ function datetimeLocalToIso(value: string): string | undefined {
 @Component({
   selector: 'app-api-keys-admin-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, StitchIconComponent],
+  imports: [ReactiveFormsModule, StitchIconComponent, ProfileRegisterSnippetsComponent],
   template: `
     <div class="w-full min-w-0 px-10 py-12 max-w-7xl mx-auto">
       <header class="mb-12 flex flex-wrap items-start justify-between gap-6">
@@ -438,8 +439,12 @@ function datetimeLocalToIso(value: string): string | undefined {
             @if (revealHasRegisterUpstreamScope(reveal)) {
               <div class="stitch-panel stitch-panel--dim p-4 mb-4">
                 <p class="text-xs text-stitch-on-surface-variant mb-3 leading-relaxed">{{ upstreamProfileCurlIntro }}</p>
-                <p class="stitch-panel-title mb-2">Example: register via upstream profile</p>
-                <pre class="text-xs font-mono whitespace-pre-wrap break-all text-stitch-on-surface-variant leading-relaxed">{{ registerUpstreamProfileCurl(reveal) }}</pre>
+                <p class="stitch-panel-title mb-3">Example: register via upstream profile</p>
+                <app-profile-register-snippets
+                  kind="upstream"
+                  [profileId]="revealUpstreamProfileId(reveal)"
+                  [apiKey]="reveal.secret"
+                />
               </div>
             }
 
@@ -453,8 +458,12 @@ function datetimeLocalToIso(value: string): string | undefined {
             @if (revealHasRegisterDomainScope(reveal)) {
               <div class="stitch-panel stitch-panel--dim p-4 mb-4">
                 <p class="text-xs text-stitch-on-surface-variant mb-3 leading-relaxed">{{ domainProfileCurlIntro }}</p>
-                <p class="stitch-panel-title mb-2">Example: register via domain profile</p>
-                <pre class="text-xs font-mono whitespace-pre-wrap break-all text-stitch-on-surface-variant leading-relaxed">{{ registerDomainProfileCurl(reveal) }}</pre>
+                <p class="stitch-panel-title mb-3">Example: register via domain profile</p>
+                <app-profile-register-snippets
+                  kind="domain"
+                  [profileId]="revealDomainProfileId(reveal)"
+                  [apiKey]="reveal.secret"
+                />
               </div>
             }
 
@@ -692,6 +701,14 @@ export class ApiKeysAdminPageComponent {
     return reveal.scopes.includes(API_KEY_SCOPE_REGISTER_DOMAIN);
   }
 
+  revealUpstreamProfileId(reveal: { upstreamProfileIds: string[] }): string {
+    return reveal.upstreamProfileIds[0] ?? '<upstream-profile-id>';
+  }
+
+  revealDomainProfileId(reveal: { domainProfileIds: string[] }): string {
+    return reveal.domainProfileIds[0] ?? '<domain-profile-id>';
+  }
+
   openCreate(): void {
     this.createError.set(null);
     this.discoverySelectionError.set(null);
@@ -873,11 +890,6 @@ export class ApiKeysAdminPageComponent {
   -d '{"config_id":"@your-route-id","dial":"10.0.0.5:8080"}'`;
   }
 
-  registerUpstreamProfileCurl(reveal: { secret: string; upstreamProfileIds: string[] }): string {
-    const profileId = reveal.upstreamProfileIds[0] ?? '<upstream-profile-id>';
-    return exampleUpstreamProfileCurl(environment.apiUrl, profileId, reveal.secret);
-  }
-
   registerDomainCurl(reveal: { secret: string; discoveryIds: string[] }): string {
     const base = environment.apiUrl.replace(/\/$/, '');
     const discoveryId = reveal.discoveryIds[0] ?? '<discovery-config-id>';
@@ -885,11 +897,6 @@ export class ApiKeysAdminPageComponent {
   -H "Authorization: ${reveal.secret}" \\
   -H "Content-Type: application/json" \\
   -d '{"config_id":"@your-route-id","domains":["app.example.com"]}'`;
-  }
-
-  registerDomainProfileCurl(reveal: { secret: string; domainProfileIds: string[] }): string {
-    const profileId = reveal.domainProfileIds[0] ?? '<domain-profile-id>';
-    return exampleDomainProfileCurl(environment.apiUrl, profileId, reveal.secret);
   }
 
   acknowledgeSecret(): void {

@@ -116,6 +116,10 @@ describe('ApiKeysAdminPageComponent', () => {
     expect(root.textContent).toContain('register-upstream');
     expect(root.textContent).toContain('upstream-profiles');
     expect(root.textContent).toContain('private_ip');
+    expect(root.textContent).toContain('Your new API key is embedded below');
+    expect(root.querySelector('code.hljs')).not.toBeNull();
+    expect(root.querySelector('[aria-label="PHP (Laravel)"]')).not.toBeNull();
+    expect(root.querySelector('[aria-label="PHP (Symfony)"]')).not.toBeNull();
   });
 
   it('reload after revoke fetches API keys again', async () => {

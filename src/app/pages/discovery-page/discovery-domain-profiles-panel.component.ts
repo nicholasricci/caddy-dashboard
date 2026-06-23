@@ -4,6 +4,7 @@ import { rxResource } from '@angular/core/rxjs-interop';
 import type { DomainProfileBindingV1, DomainProfileV1 } from '../../models/api-v1.model';
 import { DomainProfilesApiService } from '../../services/api/domain-profiles-api.service';
 import { StitchIconComponent } from '../../ui/stitch-icon.component';
+import { ProfileRegisterSnippetsComponent } from '../../ui/profile-register-snippets.component';
 import { ConfirmService } from '../../ui/confirm.service';
 import { extractApiError } from '../../core/http-error.util';
 import {
@@ -66,7 +67,7 @@ function bindingsSummary(profile: DomainProfileV1): string {
 @Component({
   selector: 'app-discovery-domain-profiles-panel',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, StitchIconComponent],
+  imports: [ReactiveFormsModule, StitchIconComponent, ProfileRegisterSnippetsComponent],
   template: `
     <section class="stitch-panel stitch-panel--dim mt-3 border-l-2 border-stitch-secondary/40 ml-2 pl-4">
       <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -112,34 +113,46 @@ function bindingsSummary(profile: DomainProfileV1): string {
       } @else {
         <div class="space-y-3">
           @for (profile of profiles(); track profile.id) {
-            <div class="flex flex-wrap items-start justify-between gap-4 rounded-sm border border-stitch-ghost bg-stitch-surface-lowest px-4 py-3">
-              <div class="min-w-0">
-                <p class="font-display font-medium text-sm text-stitch-on-surface">{{ profile.name || profile.id }}</p>
-                @if (profile.description) {
-                  <p class="text-xs text-stitch-on-surface-variant mt-1">{{ profile.description }}</p>
-                }
-                <p class="text-xs font-mono text-stitch-on-surface-variant mt-2 break-all">
-                  id: {{ profile.id }} · {{ bindingsSummary(profile) }}
-                </p>
+            <div
+              class="flex flex-col gap-3 rounded-sm border border-stitch-ghost bg-stitch-surface-lowest px-4 py-3"
+            >
+              <div class="flex flex-wrap items-start justify-between gap-4">
+                <div class="min-w-0">
+                  <p class="font-display font-medium text-sm text-stitch-on-surface">{{ profile.name || profile.id }}</p>
+                  @if (profile.description) {
+                    <p class="text-xs text-stitch-on-surface-variant mt-1">{{ profile.description }}</p>
+                  }
+                  <p class="text-xs font-mono text-stitch-on-surface-variant mt-2 break-all">
+                    id: {{ profile.id }} · {{ bindingsSummary(profile) }}
+                  </p>
+                </div>
+                <div class="flex gap-2">
+                  <button
+                    type="button"
+                    class="btn-stitch-secondary btn-stitch-secondary--sm stitch-icon-btn"
+                    (click)="openEdit(profile)"
+                  >
+                    <app-stitch-icon name="edit" size="xs" />
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-stitch-secondary btn-stitch-secondary--sm text-stitch-error stitch-icon-btn"
+                    (click)="remove(profile)"
+                  >
+                    <app-stitch-icon name="trash" size="xs" />
+                    Delete
+                  </button>
+                </div>
               </div>
-              <div class="flex gap-2">
-                <button
-                  type="button"
-                  class="btn-stitch-secondary btn-stitch-secondary--sm stitch-icon-btn"
-                  (click)="openEdit(profile)"
-                >
-                  <app-stitch-icon name="edit" size="xs" />
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  class="btn-stitch-secondary btn-stitch-secondary--sm text-stitch-error stitch-icon-btn"
-                  (click)="remove(profile)"
-                >
-                  <app-stitch-icon name="trash" size="xs" />
-                  Delete
-                </button>
-              </div>
+              @if (profile.id) {
+                <details class="w-full rounded-sm border border-stitch-ghost p-3">
+                  <summary class="text-sm font-medium text-stitch-on-surface cursor-pointer">Code snippets</summary>
+                  <div class="mt-3">
+                    <app-profile-register-snippets kind="domain" [profileId]="profile.id" />
+                  </div>
+                </details>
+              }
             </div>
           } @empty {
             <p class="text-sm text-stitch-on-surface-variant py-4 text-center">No domain profiles for this group yet.</p>
