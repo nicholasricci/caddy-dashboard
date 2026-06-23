@@ -83,6 +83,14 @@ import { StitchIconComponent } from '../../ui/stitch-icon.component';
               <app-stitch-icon name="sparkles" />
               <span>API playground</span>
             </a>
+            <a
+              routerLink="/admin/scheduled-tasks"
+              routerLinkActive="bg-stitch-surface text-stitch-on-surface font-medium border-l-2 border-stitch-primary pl-[calc(0.75rem-2px)]"
+              class="flex items-center gap-3 px-3 py-3 text-sm text-stitch-on-surface-variant hover:bg-stitch-surface-container/50 rounded-sm transition-colors border-l-2 border-transparent"
+            >
+              <app-stitch-icon name="clock" />
+              <span>Scheduled tasks</span>
+            </a>
           }
         </nav>
 

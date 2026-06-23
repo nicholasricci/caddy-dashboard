@@ -48,6 +48,14 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./pages/api-playground-page/api-playground-page.component').then(m => m.ApiPlaygroundPageComponent),
         canActivate: [adminGuard]
+      },
+      {
+        path: 'admin/scheduled-tasks',
+        loadComponent: () =>
+          import('./pages/scheduled-tasks-admin-page/scheduled-tasks-admin-page.component').then(
+            m => m.ScheduledTasksAdminPageComponent
+          ),
+        canActivate: [adminGuard]
       }
     ]
   },

@@ -194,6 +194,22 @@ import { ChangeDetectionStrategy, Component, computed, input } from '@angular/co
             d="M9 12.75L11.25 15 15 9.75M6.375 3.75h11.25c.621 0 1.125.504 1.125 1.125v14.25c0 .621-.504 1.125-1.125 1.125H6.375a1.125 1.125 0 01-1.125-1.125V4.875c0-.621.504-1.125 1.125-1.125z"
           />
         }
+        @case ('clock') {
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="1.75"
+            d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
+          />
+        }
+        @case ('pause') {
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="1.75"
+            d="M15.75 5.25v13.5m-7.5-13.5v13.5"
+          />
+        }
         @default {
           <path
             stroke-linecap="round"
@@ -232,6 +248,8 @@ export class StitchIconComponent {
     | 'chart'
     | 'circleStack'
     | 'audit'
+    | 'clock'
+    | 'pause'
   >();
 
   size = input<'xs' | 'sm' | 'md' | 'lg'>('sm');
