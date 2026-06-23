@@ -18,6 +18,16 @@ import {
 import { StitchIconComponent } from '../../ui/stitch-icon.component';
 import { ConfirmService } from '../../ui/confirm.service';
 import { extractApiError } from '../../core/http-error.util';
+import {
+  DOMAIN_PROFILE_API_KEYS_RESTRICT_NOTE,
+  DOMAIN_PROFILE_CURL_INTRO,
+  DOMAIN_PROFILE_SUMMARY,
+  exampleDomainProfileCurl,
+  exampleUpstreamProfileCurl,
+  UPSTREAM_PROFILE_API_KEYS_RESTRICT_NOTE,
+  UPSTREAM_PROFILE_CURL_INTRO,
+  UPSTREAM_PROFILE_SUMMARY
+} from '../../core/profile-help.copy';
 import { normalizeDiscoveryRows } from '../../core/api-list-normalize.util';
 import { environment } from '../../../environments/environment';
 
@@ -72,7 +82,7 @@ function datetimeLocalToIso(value: string): string | undefined {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [ReactiveFormsModule, StitchIconComponent],
   template: `
-    <div class="px-10 py-12 max-w-6xl mx-auto">
+    <div class="w-full min-w-0 px-10 py-12 max-w-7xl mx-auto">
       <header class="mb-12 flex flex-wrap items-start justify-between gap-6">
         <div>
           <h2 class="font-display text-3xl font-semibold tracking-tight text-stitch-on-surface flex items-center gap-3">
@@ -119,19 +129,17 @@ function datetimeLocalToIso(value: string): string | undefined {
           <p class="text-sm text-stitch-on-surface-variant">No API keys yet. Create one for external register-upstream calls.</p>
         </div>
       } @else {
-        <div class="overflow-x-auto rounded-sm stitch-panel p-0 border-stitch-ghost">
+        <div class="min-w-0 rounded-sm stitch-panel p-0 border-stitch-ghost">
           <table class="table w-full border-collapse">
             <thead>
               <tr class="text-[11px] uppercase tracking-wider text-stitch-on-surface-variant border-b border-stitch-ghost">
-                <th class="font-medium py-6 px-4 text-left">Name</th>
-                <th class="font-medium py-6 px-4 text-left">Prefix</th>
-                <th class="font-medium py-6 px-4 text-left">Scopes</th>
-                <th class="font-medium py-6 px-4 text-left">Discovery groups</th>
-                <th class="font-medium py-6 px-4 text-left">Upstream profiles</th>
-                <th class="font-medium py-6 px-4 text-left">Domain profiles</th>
-                <th class="font-medium py-6 px-4 text-left">Status</th>
-                <th class="font-medium py-6 px-4 text-left">Last used</th>
-                <th class="py-6 px-4"></th>
+                <th class="font-medium py-4 px-4 text-left">Name</th>
+                <th class="font-medium py-4 px-4 text-left">Prefix</th>
+                <th class="font-medium py-4 px-4 text-left">Scopes</th>
+                <th class="font-medium py-4 px-4 text-left">Access</th>
+                <th class="font-medium py-4 px-4 text-left">Status</th>
+                <th class="font-medium py-4 px-4 text-left">Last used</th>
+                <th class="font-medium py-4 px-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -141,27 +149,32 @@ function datetimeLocalToIso(value: string): string | undefined {
                   [class.bg-transparent]="i % 2 === 0"
                   [class.bg-stitch-surface-low/80]="i % 2 !== 0"
                 >
-                  <td class="py-6 px-4 align-middle font-medium">{{ key.name || '—' }}</td>
-                  <td class="py-6 px-4 align-middle font-mono text-xs">{{ key.key_prefix || '—' }}</td>
-                  <td class="py-6 px-4 align-middle">
-                    <div class="flex flex-wrap gap-1">
+                  <td class="py-4 px-4 align-middle font-medium min-w-0 break-words">{{ key.name || '—' }}</td>
+                  <td class="py-4 px-4 align-middle font-mono text-xs min-w-0 break-all">{{ key.key_prefix || '—' }}</td>
+                  <td class="py-4 px-4 align-middle min-w-0">
+                    <div class="flex flex-wrap gap-1 max-w-full">
                       @for (scope of key.scopes || []; track scope) {
-                        <span class="stitch-status-chip">{{ scope }}</span>
+                        <span class="stitch-status-chip max-w-full break-all">{{ scope }}</span>
                       } @empty {
                         <span class="text-stitch-on-surface-variant">—</span>
                       }
                     </div>
                   </td>
-                  <td class="py-6 px-4 align-middle text-xs">
-                    {{ discoveryLabels(key.allowed_discovery_config_ids) }}
+                  <td class="py-4 px-4 align-middle text-xs min-w-0 space-y-1">
+                    <div class="break-words">
+                      <span class="text-stitch-on-surface-variant">Discovery:</span>
+                      {{ discoveryLabels(key.allowed_discovery_config_ids) }}
+                    </div>
+                    <div class="break-words">
+                      <span class="text-stitch-on-surface-variant">Upstream:</span>
+                      {{ profileLabels(key.allowed_upstream_profile_ids) }}
+                    </div>
+                    <div class="break-words">
+                      <span class="text-stitch-on-surface-variant">Domain:</span>
+                      {{ domainProfileLabels(key.allowed_domain_profile_ids) }}
+                    </div>
                   </td>
-                  <td class="py-6 px-4 align-middle text-xs">
-                    {{ profileLabels(key.allowed_upstream_profile_ids) }}
-                  </td>
-                  <td class="py-6 px-4 align-middle text-xs">
-                    {{ domainProfileLabels(key.allowed_domain_profile_ids) }}
-                  </td>
-                  <td class="py-6 px-4 align-middle">
+                  <td class="py-4 px-4 align-middle">
                     <span
                       class="stitch-status-chip"
                       [class.text-stitch-error]="statusOf(key) === 'revoked'"
@@ -170,14 +183,15 @@ function datetimeLocalToIso(value: string): string | undefined {
                       {{ statusLabel(statusOf(key)) }}
                     </span>
                   </td>
-                  <td class="py-6 px-4 align-middle text-xs font-mono text-stitch-on-surface-variant">
+                  <td class="py-4 px-4 align-middle text-xs font-mono text-stitch-on-surface-variant min-w-0 break-words">
                     {{ formatTs(key.last_used_at) }}
                   </td>
-                  <td class="py-6 px-4 text-right align-middle whitespace-nowrap">
+                  <td class="py-4 px-4 text-right align-middle min-w-0">
+                    <div class="flex flex-wrap justify-end gap-x-3 gap-y-1">
                     @if (statusOf(key) === 'active') {
                       <button
                         type="button"
-                        class="text-sm text-amber-700 hover:underline mr-3 inline-flex items-center gap-1"
+                        class="text-sm text-amber-700 hover:underline inline-flex items-center gap-1 shrink-0"
                         (click)="revoke(key)"
                       >
                         Revoke
@@ -185,12 +199,13 @@ function datetimeLocalToIso(value: string): string | undefined {
                     }
                     <button
                       type="button"
-                      class="text-sm text-stitch-error hover:underline inline-flex items-center gap-1"
+                      class="text-sm text-stitch-error hover:underline inline-flex items-center gap-1 shrink-0"
                       (click)="remove(key)"
                     >
                       <app-stitch-icon name="trash" size="xs" />
                       Delete
                     </button>
+                    </div>
                   </td>
                 </tr>
               }
@@ -292,9 +307,8 @@ function datetimeLocalToIso(value: string): string | undefined {
                   <legend class="text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium mb-2">
                     Allowed upstream profiles (optional)
                   </legend>
-                  <p class="text-xs text-stitch-on-surface-variant mb-2">
-                    Restrict upstream profile register calls. Leave empty to allow any upstream profile on the selected
-                    discovery groups.
+                  <p class="text-xs text-stitch-on-surface-variant mb-2 leading-relaxed">
+                    {{ upstreamProfileSummary }} {{ upstreamProfileApiKeysRestrictNote }}
                   </p>
                   <div class="space-y-2 max-h-40 overflow-y-auto stitch-panel stitch-panel--dim p-3">
                     @for (profile of availableUpstreamProfilesForSelection(); track profile.id) {
@@ -314,6 +328,12 @@ function datetimeLocalToIso(value: string): string | undefined {
                       </label>
                     }
                   </div>
+                  <details class="mt-3 rounded-sm border border-stitch-ghost p-3">
+                    <summary class="text-sm font-medium text-stitch-on-surface cursor-pointer">Example call</summary>
+                    <pre
+                      class="text-xs font-mono whitespace-pre-wrap break-all text-stitch-on-surface-variant leading-relaxed mt-3"
+                    >{{ createModalUpstreamProfileCurl }}</pre>
+                  </details>
                 </fieldset>
               }
 
@@ -322,9 +342,8 @@ function datetimeLocalToIso(value: string): string | undefined {
                   <legend class="text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium mb-2">
                     Allowed domain profiles (optional)
                   </legend>
-                  <p class="text-xs text-stitch-on-surface-variant mb-2">
-                    Restrict domain profile register calls. Leave empty to allow any domain profile on the selected
-                    discovery groups.
+                  <p class="text-xs text-stitch-on-surface-variant mb-2 leading-relaxed">
+                    {{ domainProfileSummary }} {{ domainProfileApiKeysRestrictNote }}
                   </p>
                   <div class="space-y-2 max-h-40 overflow-y-auto stitch-panel stitch-panel--dim p-3">
                     @for (profile of availableDomainProfilesForSelection(); track profile.id) {
@@ -344,6 +363,12 @@ function datetimeLocalToIso(value: string): string | undefined {
                       </label>
                     }
                   </div>
+                  <details class="mt-3 rounded-sm border border-stitch-ghost p-3">
+                    <summary class="text-sm font-medium text-stitch-on-surface cursor-pointer">Example call</summary>
+                    <pre
+                      class="text-xs font-mono whitespace-pre-wrap break-all text-stitch-on-surface-variant leading-relaxed mt-3"
+                    >{{ createModalDomainProfileCurl }}</pre>
+                  </details>
                 </fieldset>
               }
 
@@ -412,29 +437,31 @@ function datetimeLocalToIso(value: string): string | undefined {
 
             @if (revealHasRegisterUpstreamScope(reveal)) {
               <div class="stitch-panel stitch-panel--dim p-4 mb-4">
-                <p class="stitch-panel-title mb-2">Example: register upstream</p>
-                <pre class="text-xs font-mono whitespace-pre-wrap break-all text-stitch-on-surface-variant leading-relaxed">{{ registerUpstreamCurl(reveal) }}</pre>
-              </div>
-            }
-
-            @if (revealHasRegisterUpstreamScope(reveal) && reveal.upstreamProfileIds.length > 0) {
-              <div class="stitch-panel stitch-panel--dim p-4 mb-4">
+                <p class="text-xs text-stitch-on-surface-variant mb-3 leading-relaxed">{{ upstreamProfileCurlIntro }}</p>
                 <p class="stitch-panel-title mb-2">Example: register via upstream profile</p>
                 <pre class="text-xs font-mono whitespace-pre-wrap break-all text-stitch-on-surface-variant leading-relaxed">{{ registerUpstreamProfileCurl(reveal) }}</pre>
               </div>
             }
 
-            @if (revealHasRegisterDomainScope(reveal)) {
+            @if (revealHasRegisterUpstreamScope(reveal)) {
               <div class="stitch-panel stitch-panel--dim p-4 mb-4">
-                <p class="stitch-panel-title mb-2">Example: register domain</p>
-                <pre class="text-xs font-mono whitespace-pre-wrap break-all text-stitch-on-surface-variant leading-relaxed">{{ registerDomainCurl(reveal) }}</pre>
+                <p class="stitch-panel-title mb-2">Example: register upstream (per route)</p>
+                <pre class="text-xs font-mono whitespace-pre-wrap break-all text-stitch-on-surface-variant leading-relaxed">{{ registerUpstreamCurl(reveal) }}</pre>
               </div>
             }
 
-            @if (revealHasRegisterDomainScope(reveal) && reveal.domainProfileIds.length > 0) {
-              <div class="stitch-panel stitch-panel--dim p-4 mb-6">
+            @if (revealHasRegisterDomainScope(reveal)) {
+              <div class="stitch-panel stitch-panel--dim p-4 mb-4">
+                <p class="text-xs text-stitch-on-surface-variant mb-3 leading-relaxed">{{ domainProfileCurlIntro }}</p>
                 <p class="stitch-panel-title mb-2">Example: register via domain profile</p>
                 <pre class="text-xs font-mono whitespace-pre-wrap break-all text-stitch-on-surface-variant leading-relaxed">{{ registerDomainProfileCurl(reveal) }}</pre>
+              </div>
+            }
+
+            @if (revealHasRegisterDomainScope(reveal)) {
+              <div class="stitch-panel stitch-panel--dim p-4 mb-6">
+                <p class="stitch-panel-title mb-2">Example: register domain (per route)</p>
+                <pre class="text-xs font-mono whitespace-pre-wrap break-all text-stitch-on-surface-variant leading-relaxed">{{ registerDomainCurl(reveal) }}</pre>
               </div>
             } @else if (!revealHasRegisterUpstreamScope(reveal)) {
               <div class="mb-6"></div>
@@ -460,6 +487,14 @@ export class ApiKeysAdminPageComponent {
 
   readonly registerUpstreamScope = API_KEY_SCOPE_REGISTER_UPSTREAM;
   readonly registerDomainScope = API_KEY_SCOPE_REGISTER_DOMAIN;
+  readonly upstreamProfileSummary = UPSTREAM_PROFILE_SUMMARY;
+  readonly domainProfileSummary = DOMAIN_PROFILE_SUMMARY;
+  readonly upstreamProfileApiKeysRestrictNote = UPSTREAM_PROFILE_API_KEYS_RESTRICT_NOTE;
+  readonly domainProfileApiKeysRestrictNote = DOMAIN_PROFILE_API_KEYS_RESTRICT_NOTE;
+  readonly upstreamProfileCurlIntro = UPSTREAM_PROFILE_CURL_INTRO;
+  readonly domainProfileCurlIntro = DOMAIN_PROFILE_CURL_INTRO;
+  readonly createModalUpstreamProfileCurl = exampleUpstreamProfileCurl(environment.apiUrl);
+  readonly createModalDomainProfileCurl = exampleDomainProfileCurl(environment.apiUrl);
 
   private readonly refreshVersion = signal(0);
   private readonly scopesRevision = signal(0);
@@ -839,12 +874,8 @@ export class ApiKeysAdminPageComponent {
   }
 
   registerUpstreamProfileCurl(reveal: { secret: string; upstreamProfileIds: string[] }): string {
-    const base = environment.apiUrl.replace(/\/$/, '');
     const profileId = reveal.upstreamProfileIds[0] ?? '<upstream-profile-id>';
-    return `curl -X POST "${base}/upstream-profiles/${profileId}/register" \\
-  -H "Authorization: ${reveal.secret}" \\
-  -H "Content-Type: application/json" \\
-  -d '{"private_ip":"10.0.0.5"}'`;
+    return exampleUpstreamProfileCurl(environment.apiUrl, profileId, reveal.secret);
   }
 
   registerDomainCurl(reveal: { secret: string; discoveryIds: string[] }): string {
@@ -857,12 +888,8 @@ export class ApiKeysAdminPageComponent {
   }
 
   registerDomainProfileCurl(reveal: { secret: string; domainProfileIds: string[] }): string {
-    const base = environment.apiUrl.replace(/\/$/, '');
     const profileId = reveal.domainProfileIds[0] ?? '<domain-profile-id>';
-    return `curl -X POST "${base}/domain-profiles/${profileId}/register" \\
-  -H "Authorization: ${reveal.secret}" \\
-  -H "Content-Type: application/json" \\
-  -d '{"domains":["app.example.com"]}'`;
+    return exampleDomainProfileCurl(environment.apiUrl, profileId, reveal.secret);
   }
 
   acknowledgeSecret(): void {

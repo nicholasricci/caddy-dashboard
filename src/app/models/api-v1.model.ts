@@ -122,6 +122,22 @@ export interface AuditLogListResponseV1 {
 
 export type AuditLogListResultV1 = AuditLogEntryV1[] | AuditLogListResponseV1;
 
+export interface AuditListFilterV1 {
+  action?: string;
+  resource?: string;
+  actor?: string;
+  resource_id?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface AuditTypesResponseV1 {
+  actions?: string[];
+  resources?: string[];
+}
+
 export interface LoginRequestV1 {
   username: string;
   password: string;

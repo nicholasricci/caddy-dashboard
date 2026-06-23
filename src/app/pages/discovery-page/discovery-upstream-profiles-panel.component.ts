@@ -6,6 +6,15 @@ import { UpstreamProfilesApiService } from '../../services/api/upstream-profiles
 import { StitchIconComponent } from '../../ui/stitch-icon.component';
 import { ConfirmService } from '../../ui/confirm.service';
 import { extractApiError } from '../../core/http-error.util';
+import {
+  exampleUpstreamProfileCurl,
+  UPSTREAM_BINDING_HINT,
+  UPSTREAM_PROFILE_EXAMPLE_DEFINITION,
+  UPSTREAM_PROFILE_SCENARIO,
+  UPSTREAM_PROFILE_SUMMARY,
+  UPSTREAM_PROFILE_WHAT_BULLETS
+} from '../../core/profile-help.copy';
+import { environment } from '../../../environments/environment';
 
 type BindingRowForm = FormGroup<{
   configId: FormControl<string>;
@@ -49,9 +58,9 @@ function bindingsSummary(profile: UpstreamProfileV1): string {
       <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
           <p class="stitch-panel-title">Upstream profiles</p>
-          <p class="text-xs text-stitch-on-surface-variant mt-1">
-            Named dial bindings for <span class="font-mono text-stitch-on-surface">{{ discoveryName() }}</span> — used by
-            machine-to-machine register.
+          <p class="text-xs text-stitch-on-surface-variant mt-1 leading-relaxed max-w-2xl">
+            {{ upstreamProfileSummary }}
+            Profiles here apply to <span class="font-mono text-stitch-on-surface">{{ discoveryName() }}</span>.
           </p>
         </div>
         <button type="button" class="btn-stitch-secondary btn-stitch-secondary--sm stitch-icon-btn" (click)="openCreate()">
@@ -59,6 +68,24 @@ function bindingsSummary(profile: UpstreamProfileV1): string {
           New profile
         </button>
       </div>
+
+      <details class="mb-3 rounded-sm border border-stitch-ghost p-3">
+        <summary class="text-sm font-medium text-stitch-on-surface cursor-pointer">What is this?</summary>
+        <p class="text-xs text-stitch-on-surface-variant mt-3 leading-relaxed">{{ upstreamProfileScenario }}</p>
+        <ul class="text-xs text-stitch-on-surface-variant mt-3 space-y-1 list-disc list-inside leading-relaxed">
+          @for (item of upstreamProfileWhatBullets; track item) {
+            <li>{{ item }}</li>
+          }
+        </ul>
+      </details>
+
+      <details class="mb-4 rounded-sm border border-stitch-ghost p-3">
+        <summary class="text-sm font-medium text-stitch-on-surface cursor-pointer">Example usage</summary>
+        <p class="text-xs text-stitch-on-surface-variant mt-3 leading-relaxed font-mono">{{ upstreamProfileExampleDefinition }}</p>
+        <pre
+          class="text-xs font-mono whitespace-pre-wrap break-all text-stitch-on-surface-variant leading-relaxed mt-3"
+        >{{ upstreamProfileExampleCurl }}</pre>
+      </details>
 
       @if (error()) {
         <p class="text-sm text-stitch-error mb-3">{{ error() }}</p>
@@ -146,6 +173,7 @@ function bindingsSummary(profile: UpstreamProfileV1): string {
 
             <fieldset class="border-0 p-0 m-0 min-w-0" formArrayName="bindings">
               <legend class="text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium mb-2">Bindings</legend>
+              <p class="text-xs text-stitch-on-surface-variant mb-3 leading-relaxed">{{ upstreamBindingHint }}</p>
               <div class="space-y-3">
                 @for (row of bindingRows.controls; track $index; let i = $index) {
                   <div class="flex flex-wrap items-end gap-3" [formGroupName]="i">
@@ -224,6 +252,12 @@ export class DiscoveryUpstreamProfilesPanelComponent {
   readonly discoveryName = input.required<string>();
 
   readonly bindingsSummary = bindingsSummary;
+  readonly upstreamProfileSummary = UPSTREAM_PROFILE_SUMMARY;
+  readonly upstreamProfileScenario = UPSTREAM_PROFILE_SCENARIO;
+  readonly upstreamProfileWhatBullets = UPSTREAM_PROFILE_WHAT_BULLETS;
+  readonly upstreamProfileExampleDefinition = UPSTREAM_PROFILE_EXAMPLE_DEFINITION;
+  readonly upstreamBindingHint = UPSTREAM_BINDING_HINT;
+  readonly upstreamProfileExampleCurl = exampleUpstreamProfileCurl(environment.apiUrl);
 
   private readonly refreshVersion = signal(0);
   private readonly actionError = signal<string | null>(null);

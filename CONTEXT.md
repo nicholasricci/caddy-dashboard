@@ -33,3 +33,8 @@ A short-lived access token (and refresh token) obtained by a human user through 
 ## API Playground
 
 An admin-only UI for testing machine-to-machine API calls by pasting an API key secret. Distinct from API key management (`/admin/api-keys`): the playground executes register requests while the keys page creates and revokes credentials. Four operations are supported, each requiring the matching scope on the API key (`register_upstream` or `register_domain`). Each operation exposes only the parameters its API endpoint expects.
+
+## Audit log
+
+An append-only record of administrative and system actions (actor, action, resource, optional payload). Admins browse and filter audit entries through the dashboard using a session JWT.
+_Avoid_: Event log, activity feed

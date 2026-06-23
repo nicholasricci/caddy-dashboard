@@ -114,6 +114,8 @@ describe('ApiKeysAdminPageComponent', () => {
     const root = fixture.nativeElement as HTMLElement;
     expect(root.textContent).toContain('cdk_live_once_only');
     expect(root.textContent).toContain('register-upstream');
+    expect(root.textContent).toContain('upstream-profiles');
+    expect(root.textContent).toContain('private_ip');
   });
 
   it('reload after revoke fetches API keys again', async () => {

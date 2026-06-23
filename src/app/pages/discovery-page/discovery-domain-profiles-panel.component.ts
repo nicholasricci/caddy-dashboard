@@ -6,6 +6,15 @@ import { DomainProfilesApiService } from '../../services/api/domain-profiles-api
 import { StitchIconComponent } from '../../ui/stitch-icon.component';
 import { ConfirmService } from '../../ui/confirm.service';
 import { extractApiError } from '../../core/http-error.util';
+import {
+  DOMAIN_BINDING_HINT,
+  DOMAIN_PROFILE_EXAMPLE_DEFINITION,
+  DOMAIN_PROFILE_SCENARIO,
+  DOMAIN_PROFILE_SUMMARY,
+  DOMAIN_PROFILE_WHAT_BULLETS,
+  exampleDomainProfileCurl
+} from '../../core/profile-help.copy';
+import { environment } from '../../../environments/environment';
 
 type BindingRowForm = FormGroup<{
   configId: FormControl<string>;
@@ -63,9 +72,9 @@ function bindingsSummary(profile: DomainProfileV1): string {
       <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
           <p class="stitch-panel-title">Domain profiles</p>
-          <p class="text-xs text-stitch-on-surface-variant mt-1">
-            Named route bindings for <span class="font-mono text-stitch-on-surface">{{ discoveryName() }}</span> — used by
-            machine-to-machine domain register.
+          <p class="text-xs text-stitch-on-surface-variant mt-1 leading-relaxed max-w-2xl">
+            {{ domainProfileSummary }}
+            Profiles here apply to <span class="font-mono text-stitch-on-surface">{{ discoveryName() }}</span>.
           </p>
         </div>
         <button type="button" class="btn-stitch-secondary btn-stitch-secondary--sm stitch-icon-btn" (click)="openCreate()">
@@ -73,6 +82,24 @@ function bindingsSummary(profile: DomainProfileV1): string {
           New profile
         </button>
       </div>
+
+      <details class="mb-3 rounded-sm border border-stitch-ghost p-3">
+        <summary class="text-sm font-medium text-stitch-on-surface cursor-pointer">What is this?</summary>
+        <p class="text-xs text-stitch-on-surface-variant mt-3 leading-relaxed">{{ domainProfileScenario }}</p>
+        <ul class="text-xs text-stitch-on-surface-variant mt-3 space-y-1 list-disc list-inside leading-relaxed">
+          @for (item of domainProfileWhatBullets; track item) {
+            <li>{{ item }}</li>
+          }
+        </ul>
+      </details>
+
+      <details class="mb-4 rounded-sm border border-stitch-ghost p-3">
+        <summary class="text-sm font-medium text-stitch-on-surface cursor-pointer">Example usage</summary>
+        <p class="text-xs text-stitch-on-surface-variant mt-3 leading-relaxed font-mono">{{ domainProfileExampleDefinition }}</p>
+        <pre
+          class="text-xs font-mono whitespace-pre-wrap break-all text-stitch-on-surface-variant leading-relaxed mt-3"
+        >{{ domainProfileExampleCurl }}</pre>
+      </details>
 
       @if (error()) {
         <p class="text-sm text-stitch-error mb-3">{{ error() }}</p>
@@ -167,6 +194,7 @@ function bindingsSummary(profile: DomainProfileV1): string {
 
             <fieldset class="border-0 p-0 m-0 min-w-0" formArrayName="bindings">
               <legend class="text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium mb-2">Bindings</legend>
+              <p class="text-xs text-stitch-on-surface-variant mb-3 leading-relaxed">{{ domainBindingHint }}</p>
               <div class="space-y-3">
                 @for (row of bindingRows.controls; track $index; let i = $index) {
                   <div class="flex flex-wrap items-end gap-3" [formGroupName]="i">
@@ -246,6 +274,12 @@ export class DiscoveryDomainProfilesPanelComponent {
   readonly discoveryName = input.required<string>();
 
   readonly bindingsSummary = bindingsSummary;
+  readonly domainProfileSummary = DOMAIN_PROFILE_SUMMARY;
+  readonly domainProfileScenario = DOMAIN_PROFILE_SCENARIO;
+  readonly domainProfileWhatBullets = DOMAIN_PROFILE_WHAT_BULLETS;
+  readonly domainProfileExampleDefinition = DOMAIN_PROFILE_EXAMPLE_DEFINITION;
+  readonly domainBindingHint = DOMAIN_BINDING_HINT;
+  readonly domainProfileExampleCurl = exampleDomainProfileCurl(environment.apiUrl);
 
   private readonly refreshVersion = signal(0);
   private readonly actionError = signal<string | null>(null);

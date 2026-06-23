@@ -4,6 +4,8 @@ import {
   APIKeyCreateResponseV1,
   APIKeyV1,
   AuditLogListResultV1,
+  AuditListFilterV1,
+  AuditTypesResponseV1,
   ApplyConfigRequestV1,
   BackfillSnapshotsResponseV1,
   CaddyConfigHostsResponseV1,
@@ -156,8 +158,12 @@ export class DashboardApiService {
     return this.discovery.runDiscovery(id);
   }
 
-  listAuditLogs(): Observable<AuditLogListResultV1> {
-    return this.audit.listAuditLogs();
+  listAuditLogs(filter?: AuditListFilterV1): Observable<AuditLogListResultV1> {
+    return this.audit.listAuditLogs(filter);
+  }
+
+  listAuditTypes(): Observable<AuditTypesResponseV1> {
+    return this.audit.listAuditTypes();
   }
 
   listUsers(): Observable<UserV1[]> {

@@ -10,6 +10,7 @@ import { DiscoveryRuleFormModalComponent } from './discovery-rule-form-modal.com
 import { DiscoveryUpstreamProfilesPanelComponent } from './discovery-upstream-profiles-panel.component';
 import { DiscoveryDomainProfilesPanelComponent } from './discovery-domain-profiles-panel.component';
 import { extractApiError } from '../../core/http-error.util';
+import { DISCOVERY_PROFILES_SIDEBAR_ITEM } from '../../core/profile-help.copy';
 import { normalizeDiscoveryRows } from '../../core/api-list-normalize.util';
 
 type DiscoveryMethodId = 'aws_ssm' | 'aws_tag' | 'static_ip';
@@ -333,6 +334,7 @@ export class DiscoveryRuleCardComponent {
                 <span class="font-mono text-stitch-on-surface">Run</span> executes the rule server-side and refreshes the node list.
               </li>
               <li>Disable a rule with the Enabled checkbox when editing — it will not run on a schedule until re-enabled (if your backend supports scheduling).</li>
+              <li>{{ discoveryProfilesSidebarItem }}</li>
             </ol>
           </div>
           @if (lastRun(); as lr) {
@@ -367,6 +369,8 @@ export class DiscoveryPageComponent {
   private readonly api = inject(DashboardApiService);
   private readonly confirmService = inject(ConfirmService);
   private readonly fb = inject(FormBuilder);
+
+  readonly discoveryProfilesSidebarItem = DISCOVERY_PROFILES_SIDEBAR_ITEM;
 
   readonly methodChoices = [
     {

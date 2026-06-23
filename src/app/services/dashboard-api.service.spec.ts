@@ -148,6 +148,35 @@ describe('DashboardApiService', () => {
     req.flush([{ id: 'a1', action: 'user.update' }]);
   });
 
+  it('listAuditLogs forwards filter query params', done => {
+    service.listAuditLogs({ action: 'sync', resource: 'node', limit: 10, offset: 0 }).subscribe({
+      next: () => done(),
+      error: done.fail
+    });
+    const req = httpMock.expectOne(
+      r =>
+        r.url === `${apiBase}/audit` &&
+        r.params.get('action') === 'sync' &&
+        r.params.get('resource') === 'node' &&
+        r.params.get('limit') === '10'
+    );
+    expect(req.request.method).toBe('GET');
+    req.flush({ items: [], meta: { total: 0, limit: 10, offset: 0 } });
+  });
+
+  it('listAuditTypes GETs /audit/types', done => {
+    service.listAuditTypes().subscribe({
+      next: res => {
+        expect(res.actions).toEqual(['create']);
+        done();
+      },
+      error: done.fail
+    });
+    const req = httpMock.expectOne(`${apiBase}/audit/types`);
+    expect(req.request.method).toBe('GET');
+    req.flush({ actions: ['create'], resources: ['node'] });
+  });
+
   it('listDiscoverySnapshots GETs /discovery/:id/snapshots', done => {
     service.listDiscoverySnapshots('disc-1').subscribe({
       next: rows => {
