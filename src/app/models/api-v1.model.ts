@@ -462,3 +462,80 @@ export interface RegisterDomainProfileResponseV1 {
   source_node_id?: string;
   targets?: RegisterDomainProfileTargetV1[];
 }
+
+export type ScheduledTaskTypeV1 =
+  | 'discovery_run'
+  | 'token_cleanup'
+  | 'node_healthcheck'
+  | 'upstream_healthcheck';
+
+export const SCHEDULED_TASK_TYPES: readonly ScheduledTaskTypeV1[] = [
+  'discovery_run',
+  'token_cleanup',
+  'node_healthcheck',
+  'upstream_healthcheck'
+] as const;
+
+export interface DiscoveryRunTaskConfigV1 {
+  discovery_config_id: string;
+}
+
+export interface UpstreamHealthcheckTaskConfigV1 {
+  config_ids?: string[];
+}
+
+export interface ScheduledTaskV1 {
+  id?: string;
+  name: string;
+  description?: string;
+  task_type: ScheduledTaskTypeV1;
+  cron_expression: string;
+  config?: Record<string, unknown>;
+  enabled?: boolean;
+  last_run_at?: string | null;
+  last_status?: string | null;
+  last_error?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/** GET /api/v1/scheduled-tasks */
+export interface ScheduledTaskListResponseV1 {
+  items: ScheduledTaskV1[];
+}
+
+/** POST /api/v1/scheduled-tasks */
+export interface CreateScheduledTaskRequestV1 {
+  name: string;
+  task_type: ScheduledTaskTypeV1;
+  cron_expression: string;
+  description?: string;
+  enabled?: boolean;
+  config?: Record<string, unknown>;
+}
+
+/** PUT /api/v1/scheduled-tasks/{id} */
+export interface UpdateScheduledTaskRequestV1 {
+  name?: string;
+  task_type?: ScheduledTaskTypeV1;
+  cron_expression?: string;
+  description?: string;
+  enabled?: boolean;
+  config?: Record<string, unknown>;
+}
+
+export interface ScheduledTaskLogV1 {
+  id?: string;
+  scheduled_task_id?: string;
+  started_at?: string;
+  finished_at?: string;
+  status?: string;
+  error?: string;
+  details?: Record<string, unknown>;
+  created_at?: string;
+}
+
+/** GET /api/v1/scheduled-tasks/{id}/logs */
+export interface ScheduledTaskLogListResponseV1 {
+  items: ScheduledTaskLogV1[];
+}

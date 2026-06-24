@@ -38,3 +38,12 @@ An admin-only UI for testing machine-to-machine API calls by pasting an API key 
 
 An append-only record of administrative and system actions (actor, action, resource, optional payload). Admins browse and filter audit entries through the dashboard using a session JWT.
 _Avoid_: Event log, activity feed
+
+## Scheduled task
+
+An admin-configured automation that runs on a cron schedule or on demand. Each task has a name, a task type, a schedule expression, optional type-specific configuration, an enabled flag, and last-run status. Supported task types: `discovery_run` (targets a Discovery group), `token_cleanup`, `node_healthcheck`, and `upstream_healthcheck`. The latter may include optional `{ config_ids: string[] }` to limit which upstream routes are checked; when omitted or empty, every route with upstreams is checked. Execution history is stored in scheduled task logs.
+_Avoid_: Cron job (in product copy)
+
+## Scheduled task log
+
+One execution record for a scheduled task: start and finish timestamps, status, optional error message, and type-specific output in `details`.
