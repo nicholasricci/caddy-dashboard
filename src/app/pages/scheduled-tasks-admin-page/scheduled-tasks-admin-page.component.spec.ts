@@ -28,6 +28,11 @@ const sampleLog: ScheduledTaskLogV1 = {
   details: { discovered_nodes: 3 }
 };
 
+const sampleLogListResponse = {
+  items: [sampleLog],
+  meta: { total: 1, limit: 10, offset: 0 }
+};
+
 describe('ScheduledTasksAdminPageComponent', () => {
   let fixture: ComponentFixture<ScheduledTasksAdminPageComponent>;
   let scheduledTasksApi: jasmine.SpyObj<ScheduledTasksApiService>;
@@ -55,7 +60,7 @@ describe('ScheduledTasksAdminPageComponent', () => {
     scheduledTasksApi.deleteScheduledTask.and.returnValue(of(void 0));
     scheduledTasksApi.toggleScheduledTask.and.returnValue(of({ ...sampleTask, enabled: false }));
     scheduledTasksApi.runScheduledTaskNow.and.returnValue(of(sampleLog));
-    scheduledTasksApi.listScheduledTaskLogs.and.returnValue(of([sampleLog]));
+    scheduledTasksApi.listScheduledTaskLogs.and.returnValue(of(sampleLogListResponse));
     discoveryApi.listDiscovery.and.returnValue(
       of([{ id: 'disc-1', name: 'EU group', method: 'aws_ssm' } as DiscoveryConfigV1])
     );
@@ -152,10 +157,96 @@ describe('ScheduledTasksAdminPageComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(scheduledTasksApi.listScheduledTaskLogs).toHaveBeenCalledWith('task-1');
+    expect(scheduledTasksApi.listScheduledTaskLogs).toHaveBeenCalledWith('task-1', { limit: 10, offset: 0 });
     const root = fixture.nativeElement as HTMLElement;
     expect(root.textContent).toContain('Execution logs');
     expect(root.textContent).toContain('success');
+  });
+
+  it('applies log filters and resets offset to zero', async () => {
+    const component = fixture.componentInstance;
+    component.openLogs(sampleTask);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    scheduledTasksApi.listScheduledTaskLogs.calls.reset();
+    scheduledTasksApi.listScheduledTaskLogs.and.returnValue(
+      of({ items: [], meta: { total: 0, limit: 20, offset: 0 } })
+    );
+
+    component.setLogsDraftField('status', 'failed');
+    component.applyLogsFilters();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(scheduledTasksApi.listScheduledTaskLogs).toHaveBeenCalledWith('task-1', {
+      status: 'failed',
+      limit: 10,
+      offset: 0
+    });
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.textContent).toContain('No execution logs match the current filters.');
+  });
+
+  it('requests the next log page using server offset', async () => {
+    scheduledTasksApi.listScheduledTaskLogs.and.returnValue(
+      of({ items: [sampleLog], meta: { total: 40, limit: 10, offset: 0 } })
+    );
+
+    const component = fixture.componentInstance;
+    component.openLogs(sampleTask);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    scheduledTasksApi.listScheduledTaskLogs.calls.reset();
+    scheduledTasksApi.listScheduledTaskLogs.and.returnValue(
+      of({ items: [sampleLog], meta: { total: 40, limit: 10, offset: 10 } })
+    );
+
+    component.logsNextPage();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(scheduledTasksApi.listScheduledTaskLogs).toHaveBeenCalledWith('task-1', {
+      limit: 10,
+      offset: 10
+    });
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.textContent).toContain('Showing 11–11 of 40');
+  });
+
+  it('resets log filters when opening logs for a different task', async () => {
+    const component = fixture.componentInstance;
+    component.openLogs(sampleTask);
+    component.setLogsDraftField('status', 'failed');
+    component.applyLogsFilters();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    scheduledTasksApi.listScheduledTaskLogs.calls.reset();
+
+    component.openLogs({ ...sampleTask, id: 'task-2', name: 'Other task' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scheduledTasksApi.listScheduledTaskLogs).toHaveBeenCalledWith('task-2', { limit: 10, offset: 0 });
+  });
+
+  it('refreshes logs when run-now completes with logs modal open', async () => {
+    const component = fixture.componentInstance;
+    component.openLogs(sampleTask);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const callsBefore = scheduledTasksApi.listScheduledTaskLogs.calls.count();
+    component.runNow(sampleTask);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scheduledTasksApi.listScheduledTaskLogs.calls.count()).toBeGreaterThan(callsBefore);
   });
 
   it('loads live config ids when upstream discovery group is selected', async () => {

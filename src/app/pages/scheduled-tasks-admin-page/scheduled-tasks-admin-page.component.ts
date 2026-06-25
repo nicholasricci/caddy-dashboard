@@ -5,6 +5,9 @@ import { of } from 'rxjs';
 import {
   SCHEDULED_TASK_TYPES,
   type CaddyConfigIdInfoV1,
+  type ScheduledTaskLogListFilterV1,
+  type ScheduledTaskLogListMetaV1,
+  type ScheduledTaskLogListResultV1,
   type ScheduledTaskLogV1,
   type ScheduledTaskTypeV1,
   type ScheduledTaskV1
@@ -23,6 +26,82 @@ const TASK_TYPE_LABELS: Record<ScheduledTaskTypeV1, string> = {
   node_healthcheck: 'Node healthcheck',
   upstream_healthcheck: 'Upstream healthcheck'
 };
+
+const LOGS_PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
+const LOGS_DEFAULT_PAGE_SIZE = LOGS_PAGE_SIZE_OPTIONS[0];
+
+const LOG_STATUS_OPTIONS = ['running', 'success', 'failed'] as const;
+
+interface LogsDraftFilter {
+  status: string;
+  fromLocal: string;
+  toLocal: string;
+}
+
+function emptyLogsDraftFilter(): LogsDraftFilter {
+  return { status: '', fromLocal: '', toLocal: '' };
+}
+
+function defaultLogsListFilter(): ScheduledTaskLogListFilterV1 {
+  return { limit: LOGS_DEFAULT_PAGE_SIZE, offset: 0 };
+}
+
+function fromDatetimeLocalInput(local: string): string | undefined {
+  const trimmed = local.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const date = new Date(trimmed);
+  if (Number.isNaN(date.getTime())) {
+    return undefined;
+  }
+  return date.toISOString();
+}
+
+function draftToAppliedLogsFilter(draft: LogsDraftFilter, limit: number): ScheduledTaskLogListFilterV1 {
+  const filter: ScheduledTaskLogListFilterV1 = { limit, offset: 0 };
+  if (draft.status) {
+    filter.status = draft.status as ScheduledTaskLogListFilterV1['status'];
+  }
+  const from = fromDatetimeLocalInput(draft.fromLocal);
+  if (from) {
+    filter.from = from;
+  }
+  const to = fromDatetimeLocalInput(draft.toLocal);
+  if (to) {
+    filter.to = to;
+  }
+  return filter;
+}
+
+function toScheduledTaskLogs(rows: ScheduledTaskLogListResultV1 | unknown): ScheduledTaskLogV1[] {
+  if (Array.isArray(rows)) {
+    return rows as ScheduledTaskLogV1[];
+  }
+  if (!rows || typeof rows !== 'object') {
+    return [];
+  }
+  const record = rows as Record<string, unknown>;
+  if (Array.isArray(record['items'])) {
+    return record['items'] as ScheduledTaskLogV1[];
+  }
+  return [];
+}
+
+function toScheduledTaskLogMeta(rows: ScheduledTaskLogListResultV1 | unknown): ScheduledTaskLogListMetaV1 | null {
+  if (!rows || typeof rows !== 'object' || Array.isArray(rows)) {
+    return null;
+  }
+  const meta = (rows as Record<string, unknown>)['meta'];
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
+    return null;
+  }
+  return meta as ScheduledTaskLogListMetaV1;
+}
+
+function logsFilterIsActive(filter: ScheduledTaskLogListFilterV1): boolean {
+  return Boolean(filter.status || filter.from || filter.to);
+}
 
 function formatTimestamp(value: string | null | undefined): string {
   if (!value) {
@@ -85,6 +164,9 @@ function statusChipClass(status: string | null | undefined): string {
   const normalized = status.toLowerCase();
   if (normalized === 'success') {
     return 'stitch-status-chip text-emerald-700 border-emerald-600/30 bg-emerald-600/10';
+  }
+  if (normalized === 'running') {
+    return 'stitch-status-chip text-amber-700 border-amber-600/30 bg-amber-600/10';
   }
   if (normalized === 'error' || normalized === 'failed' || normalized === 'failure') {
     return 'stitch-status-chip text-stitch-error border-stitch-error/30 bg-stitch-error/10';
@@ -481,6 +563,75 @@ function statusChipClass(status: string | null | undefined): string {
             </h3>
             <p class="text-sm text-stitch-on-surface-variant mb-6 font-mono">{{ logsTaskName() }}</p>
 
+            <section class="stitch-panel stitch-panel--dim mb-6">
+              <p class="stitch-panel-title mb-4">Filters</p>
+              <div class="grid gap-4 sm:grid-cols-3">
+                <label class="form-control">
+                  <span class="text-xs text-stitch-on-surface-variant">Status</span>
+                  <select
+                    class="select select-bordered w-full mt-1.5 px-3 font-mono text-xs"
+                    [value]="logsDraftFilter().status"
+                    (change)="setLogsDraftField('status', readSelectValue($event))"
+                  >
+                    <option value="">All</option>
+                    @for (status of logStatusOptions; track status) {
+                      <option [value]="status">{{ status }}</option>
+                    }
+                  </select>
+                </label>
+                <label class="form-control">
+                  <span class="text-xs text-stitch-on-surface-variant" for="st-logs-filter-from">From</span>
+                  <input
+                    id="st-logs-filter-from"
+                    type="datetime-local"
+                    class="input input-bordered w-full mt-1.5 font-mono text-xs"
+                    [value]="logsDraftFilter().fromLocal"
+                    (input)="setLogsDraftField('fromLocal', readInputValue($event))"
+                  />
+                </label>
+                <label class="form-control">
+                  <span class="text-xs text-stitch-on-surface-variant" for="st-logs-filter-to">To</span>
+                  <input
+                    id="st-logs-filter-to"
+                    type="datetime-local"
+                    class="input input-bordered w-full mt-1.5 font-mono text-xs"
+                    [value]="logsDraftFilter().toLocal"
+                    (input)="setLogsDraftField('toLocal', readInputValue($event))"
+                  />
+                </label>
+              </div>
+              <div class="mt-5 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  class="btn-stitch-primary btn-stitch-primary--sm"
+                  (click)="applyLogsFilters()"
+                  [disabled]="logsLoading()"
+                >
+                  Apply filters
+                </button>
+                <button
+                  type="button"
+                  class="btn-stitch-secondary btn-stitch-secondary--sm"
+                  (click)="clearLogsFilters()"
+                  [disabled]="logsLoading()"
+                >
+                  Clear
+                </button>
+                <label class="ml-auto flex shrink-0 items-center gap-2 whitespace-nowrap text-xs text-stitch-on-surface-variant">
+                  <span>Page size</span>
+                  <select
+                    class="select select-bordered select-sm min-w-[4.75rem] pl-3 pr-8 font-mono text-xs"
+                    [value]="logsPageSize()"
+                    (change)="onLogsPageSizeChange(readSelectNumber($event))"
+                  >
+                    @for (size of logsPageSizeOptions; track size) {
+                      <option [value]="size">{{ size }}</option>
+                    }
+                  </select>
+                </label>
+              </div>
+            </section>
+
             @if (logsLoading()) {
               <div class="flex py-12 justify-center">
                 <span class="loading loading-spinner loading-md text-stitch-on-surface-variant"></span>
@@ -488,7 +639,13 @@ function statusChipClass(status: string | null | undefined): string {
             } @else if (logsError()) {
               <p class="text-sm text-stitch-error">{{ logsError() }}</p>
             } @else if (logs().length === 0) {
-              <p class="text-sm text-stitch-on-surface-variant">No execution logs for this task.</p>
+              <p class="text-sm text-stitch-on-surface-variant">
+                @if (logsFiltersActive()) {
+                  No execution logs match the current filters.
+                } @else {
+                  No execution logs for this task.
+                }
+              </p>
             } @else {
               <div class="overflow-x-auto rounded-sm border border-stitch-ghost">
                 <table class="table w-full border-collapse text-sm">
@@ -538,6 +695,30 @@ function statusChipClass(status: string | null | undefined): string {
                   </tbody>
                 </table>
               </div>
+
+              @if (logsPageSummary()) {
+                <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
+                  <p class="text-[10px] font-mono text-stitch-on-surface-variant">{{ logsPageSummary() }}</p>
+                  <div class="flex gap-2">
+                    <button
+                      type="button"
+                      class="btn-stitch-secondary btn-stitch-secondary--sm"
+                      (click)="logsPrevPage()"
+                      [disabled]="!logsCanGoPrev() || logsLoading()"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      type="button"
+                      class="btn-stitch-secondary btn-stitch-secondary--sm"
+                      (click)="logsNextPage()"
+                      [disabled]="!logsCanGoNext() || logsLoading()"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              }
             }
 
             <div class="flex justify-end mt-6">
@@ -553,6 +734,8 @@ function statusChipClass(status: string | null | undefined): string {
 })
 export class ScheduledTasksAdminPageComponent {
   readonly taskTypes = SCHEDULED_TASK_TYPES;
+  readonly logsPageSizeOptions = LOGS_PAGE_SIZE_OPTIONS;
+  readonly logStatusOptions = LOG_STATUS_OPTIONS;
 
   private readonly scheduledTasksApi = inject(ScheduledTasksApiService);
   private readonly discoveryApi = inject(DiscoveryApiService);
@@ -573,6 +756,9 @@ export class ScheduledTasksAdminPageComponent {
   readonly logsTaskId = signal<string | null>(null);
   readonly logsTaskName = signal('');
   private readonly logsRefreshVersion = signal(0);
+  readonly logsDraftFilter = signal<LogsDraftFilter>(emptyLogsDraftFilter());
+  readonly logsPageSize = signal<number>(LOGS_DEFAULT_PAGE_SIZE);
+  readonly logsAppliedFilter = signal<ScheduledTaskLogListFilterV1>(defaultLogsListFilter());
   private readonly expandedLogIds = signal<Set<string>>(new Set());
   readonly upstreamDiscoveryId = signal('');
   readonly selectedConfigIds = signal<Set<string>>(new Set());
@@ -597,13 +783,21 @@ export class ScheduledTasksAdminPageComponent {
   readonly logsResource = rxResource({
     params: () => ({
       taskId: this.logsTaskId(),
+      filter: this.logsAppliedFilter(),
+      limit: this.logsPageSize(),
       refresh: this.logsRefreshVersion()
     }),
     stream: ({ params }) => {
       if (!params.taskId) {
-        return of([] as ScheduledTaskLogV1[]);
+        return of({
+          items: [],
+          meta: { total: 0, limit: params.limit, offset: 0 }
+        } satisfies ScheduledTaskLogListResultV1);
       }
-      return this.scheduledTasksApi.listScheduledTaskLogs(params.taskId);
+      return this.scheduledTasksApi.listScheduledTaskLogs(params.taskId, {
+        ...params.filter,
+        limit: params.limit
+      });
     }
   });
 
@@ -614,11 +808,42 @@ export class ScheduledTasksAdminPageComponent {
   );
   readonly nodes = computed(() => normalizeNodeRows(this.nodesResource.value() as unknown));
 
-  readonly logs = computed(() => (this.logsResource.value() as ScheduledTaskLogV1[] | undefined) ?? []);
+  readonly logs = computed(() =>
+    toScheduledTaskLogs(this.logsResource.value() as ScheduledTaskLogListResultV1 | unknown)
+  );
+  readonly logsMeta = computed(() =>
+    toScheduledTaskLogMeta(this.logsResource.value() as ScheduledTaskLogListResultV1 | unknown)
+  );
   readonly logsLoading = computed(() => this.logsResource.isLoading());
   readonly logsError = computed(() => {
     const e = this.logsResource.error();
     return e ? extractApiError(e, 'Failed to load logs') : null;
+  });
+  readonly logsFiltersActive = computed(() => logsFilterIsActive(this.logsAppliedFilter()));
+  readonly logsCanGoPrev = computed(() => (this.logsAppliedFilter().offset ?? 0) > 0);
+  readonly logsCanGoNext = computed(() => {
+    const meta = this.logsMeta();
+    const total = meta?.total;
+    if (typeof total !== 'number') {
+      return false;
+    }
+    const offset = this.logsAppliedFilter().offset ?? 0;
+    return offset + this.logs().length < total;
+  });
+  readonly logsPageSummary = computed(() => {
+    const meta = this.logsMeta();
+    const total = meta?.total;
+    if (typeof total !== 'number' || total === 0) {
+      return '';
+    }
+    const offset = this.logsAppliedFilter().offset ?? 0;
+    const visible = this.logs().length;
+    if (visible === 0) {
+      return `0 of ${total} entries`;
+    }
+    const start = offset + 1;
+    const end = Math.min(offset + visible, total);
+    return `Showing ${start}–${end} of ${total}`;
   });
 
   readonly error = computed(() => {
@@ -888,6 +1113,9 @@ export class ScheduledTasksAdminPageComponent {
         const status = log.status ?? 'completed';
         this.lastRunMessage.set(`${new Date().toISOString()} — “${task.name}” run finished (${status}).`);
         this.load();
+        if (this.showLogsModal() && this.logsTaskId() === task.id) {
+          this.logsRefreshVersion.update(v => v + 1);
+        }
       },
       error: err => {
         this.runningId.set(null);
@@ -921,6 +1149,9 @@ export class ScheduledTasksAdminPageComponent {
     this.logsTaskId.set(task.id);
     this.logsTaskName.set(task.name);
     this.expandedLogIds.set(new Set());
+    this.logsDraftFilter.set(emptyLogsDraftFilter());
+    this.logsPageSize.set(LOGS_DEFAULT_PAGE_SIZE);
+    this.logsAppliedFilter.set(defaultLogsListFilter());
     this.logsRefreshVersion.update(v => v + 1);
     this.showLogsModal.set(true);
   }
@@ -928,5 +1159,64 @@ export class ScheduledTasksAdminPageComponent {
   closeLogsModal(): void {
     this.showLogsModal.set(false);
     this.logsTaskId.set(null);
+  }
+
+  readSelectValue(event: Event): string {
+    return (event.target as HTMLSelectElement).value;
+  }
+
+  readSelectNumber(event: Event): number {
+    return Number((event.target as HTMLSelectElement).value);
+  }
+
+  readInputValue(event: Event): string {
+    return (event.target as HTMLInputElement).value;
+  }
+
+  setLogsDraftField<K extends keyof LogsDraftFilter>(field: K, value: LogsDraftFilter[K]): void {
+    this.logsDraftFilter.update(draft => ({ ...draft, [field]: value }));
+  }
+
+  applyLogsFilters(): void {
+    this.logsAppliedFilter.set(draftToAppliedLogsFilter(this.logsDraftFilter(), this.logsPageSize()));
+    this.logsRefreshVersion.update(v => v + 1);
+  }
+
+  clearLogsFilters(): void {
+    this.logsDraftFilter.set(emptyLogsDraftFilter());
+    this.logsPageSize.set(LOGS_DEFAULT_PAGE_SIZE);
+    this.logsAppliedFilter.set(defaultLogsListFilter());
+    this.logsRefreshVersion.update(v => v + 1);
+  }
+
+  onLogsPageSizeChange(size: number): void {
+    if (!LOGS_PAGE_SIZE_OPTIONS.includes(size as (typeof LOGS_PAGE_SIZE_OPTIONS)[number])) {
+      return;
+    }
+    this.logsPageSize.set(size);
+    this.logsAppliedFilter.update(current => ({ ...current, limit: size, offset: 0 }));
+    this.logsRefreshVersion.update(v => v + 1);
+  }
+
+  logsPrevPage(): void {
+    if (!this.logsCanGoPrev()) {
+      return;
+    }
+    const current = this.logsAppliedFilter();
+    const limit = current.limit ?? this.logsPageSize();
+    const offset = current.offset ?? 0;
+    this.logsAppliedFilter.set({ ...current, offset: Math.max(0, offset - limit) });
+    this.logsRefreshVersion.update(v => v + 1);
+  }
+
+  logsNextPage(): void {
+    if (!this.logsCanGoNext()) {
+      return;
+    }
+    const current = this.logsAppliedFilter();
+    const limit = current.limit ?? this.logsPageSize();
+    const offset = current.offset ?? 0;
+    this.logsAppliedFilter.set({ ...current, offset: offset + limit });
+    this.logsRefreshVersion.update(v => v + 1);
   }
 }

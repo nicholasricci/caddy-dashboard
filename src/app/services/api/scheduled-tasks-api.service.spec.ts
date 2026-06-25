@@ -89,4 +89,47 @@ describe('ScheduledTasksApiService', () => {
     expect(req.request.method).toBe('POST');
     req.flush({ id: 'l1', status: 'success' });
   });
+
+  it('listScheduledTaskLogs GETs /logs without params when filter is omitted', done => {
+    service.listScheduledTaskLogs('t1').subscribe({
+      next: () => done(),
+      error: done.fail
+    });
+
+    const req = httpMock.expectOne(`${apiBase}/scheduled-tasks/t1/logs`);
+    expect(req.request.method).toBe('GET');
+    expect(req.request.params.keys().length).toBe(0);
+    req.flush({ items: [], meta: { total: 0, limit: 20, offset: 0 } });
+  });
+
+  it('listScheduledTaskLogs serializes filter query params', done => {
+    service
+      .listScheduledTaskLogs('t1', {
+        status: 'failed',
+        from: '2024-01-01T00:00:00Z',
+        to: '2024-12-31T23:59:59Z',
+        limit: 10,
+        offset: 20
+      })
+      .subscribe({
+        next: result => {
+          expect(result.items?.length).toBe(1);
+          expect(result.meta?.total).toBe(42);
+          done();
+        },
+        error: done.fail
+      });
+
+    const req = httpMock.expectOne(
+      r =>
+        r.url === `${apiBase}/scheduled-tasks/t1/logs` &&
+        r.params.get('status') === 'failed' &&
+        r.params.get('from') === '2024-01-01T00:00:00Z' &&
+        r.params.get('to') === '2024-12-31T23:59:59Z' &&
+        r.params.get('limit') === '10' &&
+        r.params.get('offset') === '20'
+    );
+    expect(req.request.method).toBe('GET');
+    req.flush({ items: [{ id: 'l1', status: 'failed' }], meta: { total: 42, limit: 10, offset: 20 } });
+  });
 });

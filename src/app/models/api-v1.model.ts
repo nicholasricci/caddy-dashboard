@@ -535,7 +535,27 @@ export interface ScheduledTaskLogV1 {
   created_at?: string;
 }
 
+export interface ScheduledTaskLogListMetaV1 {
+  total?: number;
+  limit?: number;
+  offset?: number;
+}
+
 /** GET /api/v1/scheduled-tasks/{id}/logs */
 export interface ScheduledTaskLogListResponseV1 {
-  items: ScheduledTaskLogV1[];
+  items?: ScheduledTaskLogV1[];
+  meta?: ScheduledTaskLogListMetaV1;
+}
+
+export interface ScheduledTaskLogListResultV1 {
+  items?: ScheduledTaskLogV1[];
+  meta?: ScheduledTaskLogListMetaV1;
+}
+
+export interface ScheduledTaskLogListFilterV1 {
+  status?: 'running' | 'success' | 'failed';
+  from?: string;
+  to?: string;
+  limit?: number;
+  offset?: number;
 }

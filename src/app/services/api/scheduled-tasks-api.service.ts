@@ -1,14 +1,41 @@
+import { HttpParams } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { map, Observable } from 'rxjs';
 import {
   CreateScheduledTaskRequestV1,
   ScheduledTaskListResponseV1,
-  ScheduledTaskLogListResponseV1,
+  ScheduledTaskLogListFilterV1,
+  ScheduledTaskLogListResultV1,
   ScheduledTaskLogV1,
   ScheduledTaskV1,
   UpdateScheduledTaskRequestV1
 } from '../../models/api-v1.model';
 import { ApiBaseService } from './api-base.service';
+
+function toScheduledTaskLogListParams(filter?: ScheduledTaskLogListFilterV1): HttpParams {
+  let params = new HttpParams();
+  if (!filter) {
+    return params;
+  }
+
+  if (filter.status) {
+    params = params.set('status', filter.status);
+  }
+  if (filter.from) {
+    params = params.set('from', filter.from);
+  }
+  if (filter.to) {
+    params = params.set('to', filter.to);
+  }
+  if (filter.limit != null) {
+    params = params.set('limit', String(filter.limit));
+  }
+  if (filter.offset != null) {
+    params = params.set('offset', String(filter.offset));
+  }
+
+  return params;
+}
 
 export function normalizeScheduledTasks(body: unknown): ScheduledTaskV1[] {
   if (body && typeof body === 'object' && Array.isArray((body as { items?: unknown }).items)) {
@@ -65,9 +92,13 @@ export class ScheduledTasksApiService extends ApiBaseService {
     );
   }
 
-  listScheduledTaskLogs(id: string): Observable<ScheduledTaskLogV1[]> {
-    return this.http
-      .get<ScheduledTaskLogListResponseV1>(`${this.base}/scheduled-tasks/${encodeURIComponent(id)}/logs`)
-      .pipe(map(body => normalizeScheduledTaskLogs(body)));
+  listScheduledTaskLogs(
+    id: string,
+    filter?: ScheduledTaskLogListFilterV1
+  ): Observable<ScheduledTaskLogListResultV1> {
+    return this.http.get<ScheduledTaskLogListResultV1>(
+      `${this.base}/scheduled-tasks/${encodeURIComponent(id)}/logs`,
+      { params: toScheduledTaskLogListParams(filter) }
+    );
   }
 }
