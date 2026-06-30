@@ -1,16 +1,19 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, signal, untracked } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { rxResource } from '@angular/core/rxjs-interop';
 import { of } from 'rxjs';
 import {
   SCHEDULED_TASK_TYPES,
   type CaddyConfigIdInfoV1,
+  type DiscoveryConfigV1,
   type ScheduledTaskLogListFilterV1,
   type ScheduledTaskLogListMetaV1,
   type ScheduledTaskLogListResultV1,
   type ScheduledTaskLogV1,
   type ScheduledTaskTypeV1,
-  type ScheduledTaskV1
+  type ScheduledTaskV1,
+  type UpstreamHealthcheckDiscoveryResultV1,
+  type UpstreamHealthcheckLogDetailsV1
 } from '../../models/api-v1.model';
 import { DiscoveryApiService } from '../../services/api/discovery-api.service';
 import { NodesApiService } from '../../services/api/nodes-api.service';
@@ -130,10 +133,28 @@ function configIdsFromTask(task: ScheduledTaskV1): string[] {
   return config['config_ids'].filter((id): id is string => typeof id === 'string' && id.length > 0);
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isUuid(value: string): boolean {
+  return UUID_PATTERN.test(value.trim());
+}
+
+function discoveryGroupOptionLabel(d: DiscoveryConfigV1): string {
+  const name = d.name?.trim();
+  const region = d.region?.trim();
+  if (name && region) {
+    return `${name} · ${region}`;
+  }
+  if (name) {
+    return name;
+  }
+  return d.id ?? '';
+}
+
 function upstreamHealthcheckSummary(task: ScheduledTaskV1): string {
   const ids = configIdsFromTask(task);
   if (ids.length === 0) {
-    return 'All upstream routes';
+    return 'All handlers with upstream';
   }
   return `${ids.length} route${ids.length === 1 ? '' : 's'}`;
 }
@@ -156,6 +177,46 @@ function formatDetailsJson(details: Record<string, unknown> | undefined): string
     return String(details);
   }
 }
+
+function parseUpstreamHealthcheckLogDetails(
+  details: Record<string, unknown> | undefined
+): UpstreamHealthcheckLogDetailsV1 | null {
+  if (!details || typeof details !== 'object') {
+    return null;
+  }
+  const durationMs = details['duration_ms'];
+  const discoveries = details['discoveries'];
+  const rawResults = details['discovery_results'];
+  if (!Array.isArray(rawResults) || rawResults.length === 0) {
+    return null;
+  }
+  const discovery_results = rawResults
+    .filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === 'object' && !Array.isArray(row))
+    .map(
+      (row): UpstreamHealthcheckDiscoveryResultV1 => ({
+        discovery_config_id:
+          typeof row['discovery_config_id'] === 'string' ? row['discovery_config_id'] : undefined,
+        discovery_name: typeof row['discovery_name'] === 'string' ? row['discovery_name'] : undefined,
+        leader_node_id: typeof row['leader_node_id'] === 'string' ? row['leader_node_id'] : undefined,
+        config_ids_checked: Array.isArray(row['config_ids_checked'])
+          ? row['config_ids_checked'].filter((id): id is string => typeof id === 'string' && id.length > 0)
+          : undefined,
+        dials_checked: typeof row['dials_checked'] === 'number' ? row['dials_checked'] : undefined,
+        unhealthy_dials: typeof row['unhealthy_dials'] === 'number' ? row['unhealthy_dials'] : undefined,
+        changed: typeof row['changed'] === 'boolean' ? row['changed'] : undefined,
+        pruned: Array.isArray(row['pruned'])
+          ? row['pruned'].filter((d): d is string => typeof d === 'string' && d.length > 0)
+          : undefined,
+        error: typeof row['error'] === 'string' ? row['error'] : undefined
+      })
+    );
+  return {
+    duration_ms: typeof durationMs === 'number' ? durationMs : undefined,
+    discoveries: typeof discoveries === 'number' ? discoveries : undefined,
+    discovery_results
+  };
+}
+
 
 function statusChipClass(status: string | null | undefined): string {
   if (!status) {
@@ -267,6 +328,14 @@ function statusChipClass(status: string | null | undefined): string {
                       }
                     }
                     @if (task.task_type === 'upstream_healthcheck') {
+                      @let discId = discoveryConfigId(task);
+                      @if (discId) {
+                        <p class="text-[11px] text-stitch-on-surface-variant mt-1 font-mono break-all">
+                          {{ discoveryLabel(discId) }}
+                        </p>
+                      } @else {
+                        <p class="text-[11px] text-stitch-error mt-1">Missing discovery group — edit required</p>
+                      }
                       <p
                         class="text-[11px] text-stitch-on-surface-variant mt-1 font-mono"
                         [title]="upstreamTooltip(task) ?? ''"
@@ -430,7 +499,7 @@ function statusChipClass(status: string | null | undefined): string {
                 <select id="st-discovery" class="input-technical mt-1 mb-5 w-full" formControlName="discovery_config_id">
                   <option value="">Select a discovery group…</option>
                   @for (d of discoveryOptions(); track d.id) {
-                    <option [value]="d.id">{{ d.name || d.id }}</option>
+                    <option [value]="d.id">{{ discoveryOptionLabel(d) }}</option>
                   }
                 </select>
               }
@@ -439,17 +508,16 @@ function statusChipClass(status: string | null | undefined): string {
                 <label
                   class="block text-[11px] uppercase tracking-wider text-stitch-on-surface-variant font-medium"
                   for="st-upstream-discovery"
-                  >Discovery group (load routes)</label
+                  >Discovery group</label
                 >
                 <select
                   id="st-upstream-discovery"
                   class="input-technical mt-1 mb-5 w-full"
-                  [value]="upstreamDiscoveryId()"
-                  (change)="onUpstreamDiscoveryChange($event)"
+                  formControlName="discovery_config_id"
                 >
                   <option value="">Select a discovery group…</option>
                   @for (d of discoveryOptions(); track d.id) {
-                    <option [value]="d.id">{{ d.name || d.id }}</option>
+                    <option [value]="d.id">{{ discoveryOptionLabel(d) }}</option>
                   }
                 </select>
 
@@ -458,9 +526,9 @@ function statusChipClass(status: string | null | undefined): string {
                     Routes with upstream (optional)
                   </legend>
                   <p class="text-xs text-stitch-on-surface-variant mb-3 leading-relaxed">
-                    Leave all unchecked to healthcheck every upstream route.
+                    Leave all unchecked to healthcheck all handlers with upstream in this discovery group.
                   </p>
-                  @if (!upstreamDiscoveryId()) {
+                  @if (!taskForm.controls.discovery_config_id.value) {
                     <p class="text-sm text-stitch-on-surface-variant">Select a discovery group to load routes.</p>
                   } @else if (upstreamRoutesLoading()) {
                     <div class="flex py-4 justify-center stitch-panel stitch-panel--dim">
@@ -684,10 +752,82 @@ function statusChipClass(status: string | null | undefined): string {
                       @if (isLogExpanded(logRowKey(log, $index)) && detailsText(log)) {
                         <tr>
                           <td colspan="5" class="px-3 pb-4">
-                            <pre
-                              class="overflow-auto rounded-sm bg-stitch-surface-lowest p-3 text-[11px] leading-5 text-stitch-on-surface whitespace-pre-wrap break-all border border-stitch-ghost"
-                              >{{ detailsText(log) }}</pre
-                            >
+                            @if (logsTaskType() === 'upstream_healthcheck') {
+                              @let parsed = upstreamLogDetails(log);
+                              @if (parsed) {
+                                @let result = parsed.discovery_results?.[0];
+                                <div class="stitch-panel stitch-panel--dim p-4 mb-3 space-y-3 text-sm">
+                                  @if (parsed.duration_ms !== undefined) {
+                                    <p>
+                                      <span class="text-stitch-on-surface-variant">Duration:</span>
+                                      <span class="font-mono ml-2">{{ parsed.duration_ms }} ms</span>
+                                    </p>
+                                  }
+                                  @if (result) {
+                                    <p>
+                                      <span class="text-stitch-on-surface-variant">Discovery:</span>
+                                      <span class="font-mono ml-2">{{
+                                        result.discovery_name || result.discovery_config_id || '—'
+                                      }}</span>
+                                    </p>
+                                    @if (result.dials_checked !== undefined || result.unhealthy_dials !== undefined) {
+                                      <p>
+                                        <span class="text-stitch-on-surface-variant">Dials:</span>
+                                        <span class="font-mono ml-2"
+                                          >{{ result.dials_checked ?? '—' }} checked,
+                                          {{ result.unhealthy_dials ?? '—' }} unhealthy</span
+                                        >
+                                      </p>
+                                    }
+                                    @if (result.config_ids_checked && result.config_ids_checked.length > 0) {
+                                      <p>
+                                        <span class="text-stitch-on-surface-variant">Handlers checked:</span>
+                                        <span class="font-mono ml-2 text-xs break-all">{{
+                                          result.config_ids_checked.join(', ')
+                                        }}</span>
+                                      </p>
+                                    }
+                                    @if (result.changed) {
+                                      <p>
+                                        <span class="stitch-status-chip text-amber-700 border-amber-600/30 bg-amber-600/10"
+                                          >Upstream changed</span
+                                        >
+                                      </p>
+                                      @if (result.pruned && result.pruned.length > 0) {
+                                        <p>
+                                          <span class="text-stitch-on-surface-variant">Pruned:</span>
+                                          <span class="font-mono ml-2 text-xs break-all">{{
+                                            result.pruned.join(', ')
+                                          }}</span>
+                                        </p>
+                                      }
+                                    }
+                                    @if (result.error) {
+                                      <p class="text-stitch-error text-xs">{{ result.error }}</p>
+                                    }
+                                  }
+                                </div>
+                              }
+                            }
+                            @if (isLogRawExpanded(logRowKey(log, $index))) {
+                              <pre
+                                class="overflow-auto rounded-sm bg-stitch-surface-lowest p-3 text-[11px] leading-5 text-stitch-on-surface whitespace-pre-wrap break-all border border-stitch-ghost"
+                                >{{ detailsText(log) }}</pre
+                              >
+                            } @else if (logsTaskType() === 'upstream_healthcheck' && upstreamLogDetails(log)) {
+                              <button
+                                type="button"
+                                class="text-xs text-stitch-primary-fixed hover:underline"
+                                (click)="toggleLogRawExpanded(logRowKey(log, $index))"
+                              >
+                                Show raw JSON
+                              </button>
+                            } @else {
+                              <pre
+                                class="overflow-auto rounded-sm bg-stitch-surface-lowest p-3 text-[11px] leading-5 text-stitch-on-surface whitespace-pre-wrap break-all border border-stitch-ghost"
+                                >{{ detailsText(log) }}</pre
+                              >
+                            }
                           </td>
                         </tr>
                       }
@@ -755,12 +895,13 @@ export class ScheduledTasksAdminPageComponent {
   readonly showLogsModal = signal(false);
   readonly logsTaskId = signal<string | null>(null);
   readonly logsTaskName = signal('');
+  readonly logsTaskType = signal<ScheduledTaskTypeV1 | null>(null);
   private readonly logsRefreshVersion = signal(0);
   readonly logsDraftFilter = signal<LogsDraftFilter>(emptyLogsDraftFilter());
   readonly logsPageSize = signal<number>(LOGS_DEFAULT_PAGE_SIZE);
   readonly logsAppliedFilter = signal<ScheduledTaskLogListFilterV1>(defaultLogsListFilter());
   private readonly expandedLogIds = signal<Set<string>>(new Set());
-  readonly upstreamDiscoveryId = signal('');
+  private readonly expandedLogRawIds = signal<Set<string>>(new Set());
   readonly selectedConfigIds = signal<Set<string>>(new Set());
   readonly upstreamRoutesLoading = signal(false);
   readonly upstreamRoutesError = signal<string | null>(null);
@@ -870,6 +1011,10 @@ export class ScheduledTasksAdminPageComponent {
   readonly discoveryConfigId = discoveryConfigIdFromTask;
   readonly upstreamSummary = upstreamHealthcheckSummary;
   readonly upstreamTooltip = upstreamHealthcheckTooltip;
+  readonly discoveryOptionLabel = discoveryGroupOptionLabel;
+  readonly upstreamLogDetails = (log: ScheduledTaskLogV1) => parseUpstreamHealthcheckLogDetails(log.details);
+
+  private pendingUpstreamRouteLoad = false;
 
   constructor() {
     this.load();
@@ -877,13 +1022,34 @@ export class ScheduledTasksAdminPageComponent {
       this.syncDiscoveryValidators(type);
       if (type !== 'upstream_healthcheck') {
         this.resetUpstreamPickerState();
+      } else if (this.taskForm.controls.discovery_config_id.value) {
+        this.loadUpstreamRoutes();
+      }
+    });
+    this.taskForm.controls.discovery_config_id.valueChanges.subscribe(() => {
+      if (this.taskForm.controls.task_type.value === 'upstream_healthcheck') {
+        this.loadUpstreamRoutes();
       }
     });
     this.syncDiscoveryValidators(this.taskForm.controls.task_type.value);
+
+    effect(() => {
+      const loading = this.nodesResource.isLoading();
+      const nodeCount = this.nodes().length;
+      if (!this.pendingUpstreamRouteLoad || loading) {
+        return;
+      }
+      if (nodeCount === 0) {
+        return;
+      }
+      untracked(() => {
+        this.pendingUpstreamRouteLoad = false;
+        this.loadUpstreamRoutes();
+      });
+    });
   }
 
   private resetUpstreamPickerState(): void {
-    this.upstreamDiscoveryId.set('');
     this.selectedConfigIds.set(new Set());
     this.upstreamRouteOptions.set([]);
     this.upstreamRoutesLoading.set(false);
@@ -894,14 +1060,8 @@ export class ScheduledTasksAdminPageComponent {
     this.nodesRefreshVersion.update(v => v + 1);
   }
 
-  onUpstreamDiscoveryChange(event: Event): void {
-    const value = (event.target as HTMLSelectElement).value;
-    this.upstreamDiscoveryId.set(value);
-    this.loadUpstreamRoutes();
-  }
-
   private loadUpstreamRoutes(): void {
-    const discoveryId = this.upstreamDiscoveryId();
+    const discoveryId = this.taskForm.controls.discovery_config_id.value.trim();
     if (!discoveryId) {
       this.upstreamRouteOptions.set([]);
       this.upstreamRoutesError.set(null);
@@ -910,10 +1070,17 @@ export class ScheduledTasksAdminPageComponent {
 
     const node = this.nodes().find(n => n.discovery_config_id === discoveryId && n.id);
     if (!node?.id) {
+      if (this.nodesResource.isLoading()) {
+        this.pendingUpstreamRouteLoad = true;
+        return;
+      }
+      this.pendingUpstreamRouteLoad = false;
       this.upstreamRouteOptions.set([]);
       this.upstreamRoutesError.set('No nodes in this discovery group.');
       return;
     }
+
+    this.pendingUpstreamRouteLoad = false;
 
     this.upstreamRoutesLoading.set(true);
     this.upstreamRoutesError.set(null);
@@ -959,7 +1126,7 @@ export class ScheduledTasksAdminPageComponent {
 
   private syncDiscoveryValidators(type: ScheduledTaskTypeV1): void {
     const discoveryControl = this.taskForm.controls.discovery_config_id;
-    if (type === 'discovery_run') {
+    if (type === 'discovery_run' || type === 'upstream_healthcheck') {
       discoveryControl.setValidators([Validators.required]);
     } else {
       discoveryControl.clearValidators();
@@ -987,6 +1154,22 @@ export class ScheduledTasksAdminPageComponent {
 
   toggleLogExpanded(key: string): void {
     this.expandedLogIds.update(current => {
+      const next = new Set(current);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }
+
+  isLogRawExpanded(key: string): boolean {
+    return this.expandedLogRawIds().has(key);
+  }
+
+  toggleLogRawExpanded(key: string): void {
+    this.expandedLogRawIds.update(current => {
       const next = new Set(current);
       if (next.has(key)) {
         next.delete(key);
@@ -1037,6 +1220,10 @@ export class ScheduledTasksAdminPageComponent {
       cron_expression: task.cron_expression,
       enabled: task.enabled !== false
     });
+    this.syncDiscoveryValidators(task.task_type);
+    if (task.task_type === 'upstream_healthcheck' && discoveryConfigIdFromTask(task)) {
+      this.loadUpstreamRoutes();
+    }
     this.showModal.set(true);
   }
 
@@ -1049,8 +1236,16 @@ export class ScheduledTasksAdminPageComponent {
     if (value.task_type === 'discovery_run') {
       config = { discovery_config_id: value.discovery_config_id };
     } else if (value.task_type === 'upstream_healthcheck') {
-      const ids = [...this.selectedConfigIds()];
-      config = ids.length > 0 ? { config_ids: ids } : {};
+      const discoveryId = value.discovery_config_id.trim();
+      if (!discoveryId || !isUuid(discoveryId)) {
+        this.actionError.set('A valid discovery group is required for upstream healthcheck.');
+        return;
+      }
+      const ids = [...this.selectedConfigIds()].filter(id => id.length > 0);
+      config = {
+        discovery_config_id: discoveryId,
+        ...(ids.length > 0 ? { config_ids: ids } : {})
+      };
     } else {
       config = {};
     }
@@ -1148,7 +1343,9 @@ export class ScheduledTasksAdminPageComponent {
     }
     this.logsTaskId.set(task.id);
     this.logsTaskName.set(task.name);
+    this.logsTaskType.set(task.task_type);
     this.expandedLogIds.set(new Set());
+    this.expandedLogRawIds.set(new Set());
     this.logsDraftFilter.set(emptyLogsDraftFilter());
     this.logsPageSize.set(LOGS_DEFAULT_PAGE_SIZE);
     this.logsAppliedFilter.set(defaultLogsListFilter());
@@ -1159,6 +1356,7 @@ export class ScheduledTasksAdminPageComponent {
   closeLogsModal(): void {
     this.showLogsModal.set(false);
     this.logsTaskId.set(null);
+    this.logsTaskType.set(null);
   }
 
   readSelectValue(event: Event): string {

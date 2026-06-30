@@ -41,7 +41,7 @@ _Avoid_: Event log, activity feed
 
 ## Scheduled task
 
-An admin-configured automation that runs on a cron schedule or on demand. Each task has a name, a task type, a schedule expression, optional type-specific configuration, an enabled flag, and last-run status. Supported task types: `discovery_run` (targets a Discovery group), `token_cleanup`, `node_healthcheck`, and `upstream_healthcheck`. The latter may include optional `{ config_ids: string[] }` to limit which upstream routes are checked; when omitted or empty, every route with upstreams is checked. Execution history is stored in scheduled task logs.
+An admin-configured automation that runs on a cron schedule or on demand. Each task has a name, a task type, a schedule expression, optional type-specific configuration, an enabled flag, and last-run status. Supported task types: `discovery_run` (targets a Discovery group), `token_cleanup`, `node_healthcheck`, and `upstream_healthcheck`. The latter requires a Discovery group (`discovery_config_id`); one upstream healthcheck task operates on a single group (separate tasks are needed for DR and MAIN). It may also include optional `config_ids` to limit which Caddy handler routes (`@id`) are checked within that group; when omitted or empty, every handler with upstreams in the group is checked. Execution history is stored in scheduled task logs.
 _Avoid_: Cron job (in product copy)
 
 ## Scheduled task log

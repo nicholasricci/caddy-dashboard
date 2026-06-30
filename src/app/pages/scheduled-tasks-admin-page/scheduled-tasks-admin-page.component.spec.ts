@@ -8,13 +8,15 @@ import { ScheduledTasksApiService } from '../../services/api/scheduled-tasks-api
 import { ConfirmService } from '../../ui/confirm.service';
 import { ScheduledTasksAdminPageComponent } from './scheduled-tasks-admin-page.component';
 
+const DISC_1 = '8040ce98-d808-4d3d-b2c4-f6161144188c';
+
 const sampleTask: ScheduledTaskV1 = {
   id: 'task-1',
   name: 'Discovery EU',
   description: 'Every 30 minutes',
   task_type: 'discovery_run',
   cron_expression: '*/30 * * * *',
-  config: { discovery_config_id: 'disc-1' },
+  config: { discovery_config_id: DISC_1 },
   enabled: true,
   last_status: 'success'
 };
@@ -62,10 +64,10 @@ describe('ScheduledTasksAdminPageComponent', () => {
     scheduledTasksApi.runScheduledTaskNow.and.returnValue(of(sampleLog));
     scheduledTasksApi.listScheduledTaskLogs.and.returnValue(of(sampleLogListResponse));
     discoveryApi.listDiscovery.and.returnValue(
-      of([{ id: 'disc-1', name: 'EU group', method: 'aws_ssm' } as DiscoveryConfigV1])
+      of([{ id: DISC_1, name: 'EU group', region: 'eu-west-1', method: 'aws_ssm' } as DiscoveryConfigV1])
     );
     nodesApi.listNodes.and.returnValue(
-      of([{ id: 'node-1', name: 'caddy-1', discovery_config_id: 'disc-1' }])
+      of([{ id: 'node-1', name: 'caddy-1', discovery_config_id: DISC_1 }])
     );
     nodesApi.listLiveConfigIds.and.returnValue(
       of({
@@ -252,11 +254,7 @@ describe('ScheduledTasksAdminPageComponent', () => {
   it('loads live config ids when upstream discovery group is selected', async () => {
     const component = fixture.componentInstance;
     component.openCreate();
-    component.taskForm.patchValue({ task_type: 'upstream_healthcheck' });
-    fixture.detectChanges();
-    await fixture.whenStable();
-
-    component.onUpstreamDiscoveryChange({ target: { value: 'disc-1' } } as unknown as Event);
+    component.taskForm.patchValue({ task_type: 'upstream_healthcheck', discovery_config_id: DISC_1 });
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -265,12 +263,13 @@ describe('ScheduledTasksAdminPageComponent', () => {
     expect(component.upstreamRouteOptions()[0].id).toBe('route/a');
   });
 
-  it('saves upstream_healthcheck with selected config_ids', async () => {
+  it('saves upstream_healthcheck with discovery_config_id and selected config_ids', async () => {
     const component = fixture.componentInstance;
     component.openCreate();
     component.taskForm.patchValue({
       name: 'Upstream check',
       task_type: 'upstream_healthcheck',
+      discovery_config_id: DISC_1,
       cron_expression: '*/5 * * * *',
       enabled: true
     });
@@ -282,17 +281,18 @@ describe('ScheduledTasksAdminPageComponent', () => {
     expect(scheduledTasksApi.createScheduledTask).toHaveBeenCalledWith(
       jasmine.objectContaining({
         task_type: 'upstream_healthcheck',
-        config: { config_ids: ['route/a'] }
+        config: { discovery_config_id: DISC_1, config_ids: ['route/a'] }
       })
     );
   });
 
-  it('saves upstream_healthcheck with empty config when no routes selected', async () => {
+  it('saves upstream_healthcheck with discovery_config_id only when no routes selected', async () => {
     const component = fixture.componentInstance;
     component.openCreate();
     component.taskForm.patchValue({
       name: 'Upstream check all',
       task_type: 'upstream_healthcheck',
+      discovery_config_id: DISC_1,
       cron_expression: '*/5 * * * *',
       enabled: true
     });
@@ -302,30 +302,68 @@ describe('ScheduledTasksAdminPageComponent', () => {
 
     expect(scheduledTasksApi.createScheduledTask).toHaveBeenCalledWith(
       jasmine.objectContaining({
-        config: {}
+        config: { discovery_config_id: DISC_1 }
       })
     );
   });
 
-  it('pre-selects config_ids when editing upstream_healthcheck task', async () => {
+  it('does not save upstream_healthcheck without discovery_config_id', async () => {
+    const component = fixture.componentInstance;
+    component.openCreate();
+    component.taskForm.patchValue({
+      name: 'Upstream check',
+      task_type: 'upstream_healthcheck',
+      discovery_config_id: '',
+      cron_expression: '*/5 * * * *',
+      enabled: true
+    });
+    component.save();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scheduledTasksApi.createScheduledTask).not.toHaveBeenCalled();
+    expect(component.taskForm.invalid).toBeTrue();
+  });
+
+  it('pre-selects config_ids and loads routes when editing upstream_healthcheck task', async () => {
     const component = fixture.componentInstance;
     component.edit({
       id: 'task-2',
       name: 'Upstream HC',
       task_type: 'upstream_healthcheck',
       cron_expression: '*/5 * * * *',
-      config: { config_ids: ['route/a'] },
+      config: { discovery_config_id: DISC_1, config_ids: ['route/a'] },
       enabled: true
     });
     fixture.detectChanges();
     await fixture.whenStable();
 
     expect(component.isConfigIdSelected('route/a')).toBeTrue();
+    expect(nodesApi.listLiveConfigIds).toHaveBeenCalledWith('node-1');
+    expect(component.upstreamRouteOptions().length).toBe(1);
+  });
 
-    component.onUpstreamDiscoveryChange({ target: { value: 'disc-1' } } as unknown as Event);
-    fixture.detectChanges();
-    await fixture.whenStable();
+  it('parses upstream healthcheck log details', () => {
+    const component = fixture.componentInstance;
+    const parsed = component.upstreamLogDetails({
+      details: {
+        duration_ms: 16906,
+        discoveries: 1,
+        discovery_results: [
+          {
+            discovery_config_id: DISC_1,
+            discovery_name: 'eu-central-1-Project-Caddy (DR)',
+            dials_checked: 6,
+            unhealthy_dials: 3,
+            changed: true,
+            pruned: ['10.0.1.5:8080']
+          }
+        ]
+      }
+    });
 
-    expect(component.isConfigIdSelected('route/a')).toBeTrue();
+    expect(parsed?.duration_ms).toBe(16906);
+    expect(parsed?.discovery_results?.[0]?.discovery_name).toBe('eu-central-1-Project-Caddy (DR)');
+    expect(parsed?.discovery_results?.[0]?.pruned).toEqual(['10.0.1.5:8080']);
   });
 });

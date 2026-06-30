@@ -462,9 +462,9 @@ export class NodesPageComponent {
   );
 
   readonly nodesResource = rxResource({
-    stream: () => {
-      this.refreshVersion();
-      return forkJoin({
+    params: () => this.refreshVersion(),
+    stream: () =>
+      forkJoin({
         nodes: this.api.listNodes(),
         discovery: this.api.listDiscovery()
       }).pipe(
@@ -472,8 +472,7 @@ export class NodesPageComponent {
           nodes: normalizeNodeRows(result.nodes).map(mapCaddyNodeV1ToListItem),
           discovery: normalizeDiscoveryRows(result.discovery)
         }))
-      );
-    }
+      )
   });
 
   readonly nodes = computed(() => (this.nodesResource.value() as { nodes: NodeListItemVm[] } | undefined)?.nodes ?? []);
@@ -553,6 +552,7 @@ export class NodesPageComponent {
   load(): void {
     this.actionError.set(null);
     this.refreshVersion.update(v => v + 1);
+    this.nodesResource.reload();
   }
 
   closeModal(): void {

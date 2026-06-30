@@ -481,7 +481,26 @@ export interface DiscoveryRunTaskConfigV1 {
 }
 
 export interface UpstreamHealthcheckTaskConfigV1 {
+  discovery_config_id: string;
   config_ids?: string[];
+}
+
+export interface UpstreamHealthcheckDiscoveryResultV1 {
+  discovery_config_id?: string;
+  discovery_name?: string;
+  leader_node_id?: string;
+  config_ids_checked?: string[];
+  dials_checked?: number;
+  unhealthy_dials?: number;
+  changed?: boolean;
+  pruned?: string[];
+  error?: string;
+}
+
+export interface UpstreamHealthcheckLogDetailsV1 {
+  duration_ms?: number;
+  discoveries?: number;
+  discovery_results?: UpstreamHealthcheckDiscoveryResultV1[];
 }
 
 export interface ScheduledTaskV1 {
